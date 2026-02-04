@@ -1,0 +1,34 @@
+import axios from '../lib/axios'
+import type {
+    MultipleUploadResponse,
+    ListFilesResponse,
+    FileUrlResponse
+} from '../interfaces/upload.interface'
+
+export class UploadGenAIAPI {
+    async uploadMultipleFiles(files: File[]): Promise<MultipleUploadResponse> {
+        const formData = new FormData()
+        files.forEach(file => {
+            formData.append('file', file)
+        })
+
+        const res = await axios.post<MultipleUploadResponse>('/s3/uploads', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        })
+        return res.data
+    }
+
+    async listFiles(): Promise<ListFilesResponse> {
+        const res = await axios.get<ListFilesResponse>('/s3/list-object')
+        return res.data
+    }
+
+    async getFileUrl(key: string): Promise<FileUrlResponse> {
+        const res = await axios.get<FileUrlResponse>(`/s3/uploads/${key}`)
+        return res.data
+    }
+}
+
+export default new UploadGenAIAPI()

@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // "baseUrl": "./",
+    // "paths": {
+    //   "@/*": ["./src/*"]
+    // },
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noUnusedLocals": true,
+    "noImplicitAny": true,
+    "experimentalDecorators": true,
+    "strict": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    // "strictNullChecks": true,
+    "module": "commonjs",
+    "target": "ES2022",
+    "incremental": true,
+    "removeComments": true,
+    "exactOptionalPropertyTypes": false,
+    "declaration": true,
+    "outDir": "./dist",
+  },
+  "include": ["src", "src/**/*", "src/**/*.d.ts"],
+  "exclude": ["backend/node_modules", "dist"]
+}

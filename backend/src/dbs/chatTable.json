@@ -1,0 +1,12 @@
+// Table structure
+{
+  TableName: "ChatHistory",
+  KeySchema: [
+    { AttributeName: "userId", KeyType: "HASH" },
+    { AttributeName: "timestamp", KeyType: "RANGE" }
+  ],
+  AttributeDefinitions: [
+    { AttributeName: "userId", AttributeType: "S" },
+    { AttributeName: "timestamp", AttributeType: "N" }
+  ]
+}
