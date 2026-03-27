@@ -1,10 +1,9 @@
-import { EmbeddingService } from "./embedding.service"
+import embeddingService from "./embedding.service"
 import { InvokeModelWithResponseStreamCommand } from "@aws-sdk/client-bedrock-runtime"
 import {
     AUTHROPIC_VERSION, MAX_TOKEN, ROLE, GENARATE_MODELID,
-    TEMPERATURE, TOP_P, TOP_K, VECTOR_TABLE, CHAT_TABLE_NAME
+    TEMPERATURE, TOP_P, TOP_K, CHAT_TABLE_NAME
 } from "../config/env"
-import pool from "../providers/postgresql.connect"
 import bedrockClient from "../providers/bedrock.connect"
 import { ChatMessage, ChatSession } from "../models/chat.model"
 import { dynamoClient } from "../providers/dynamodb.connect"
@@ -12,11 +11,11 @@ import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
 
 export class ChatService {
     async *queryWithContext(question: string): AsyncIterable<string> {
-        const questionEmbedding = await new EmbeddingService().generateEmbedding(question)
+        const questionEmbedding = await embeddingService.generateEmbedding(question)
 
         const similarChunks = await this.findSimilarChunks(questionEmbedding)
 
-        const context = similarChunks.map(chunk => chunk.content).join('\n\n')
+        const context = similarChunks.map(chunk => chunk.metadata?.content || '').join('\n\n')
         const prompt = this.buildPromt(question, context)
 
         yield* this.invokeClaudeStream(prompt)
@@ -53,18 +52,21 @@ export class ChatService {
     }
 
     private async findSimilarChunks(queryEmbeding: number[]) {
-
-        const embeddingStr = `[${queryEmbeding.join(',')}]`
-
-        const query = `
-            SELECT file_name, chunk_index, content, embedding <-> $1::vector as distance
-            FROM ${VECTOR_TABLE}
-            ORDER BY embedding <-> $1::vector 
-            LIMIT $2;
-        `
-
-        const result = await pool.query(query, [embeddingStr, TOP_K])
-        return result.rows
+        try {
+            // Use the embedding service to query Pinecone
+            const similarDocuments = await embeddingService.querySimilarDocuments(
+                queryEmbeding, 
+                parseInt(TOP_K!) || 5
+            )
+            
+            return similarDocuments.map(match => ({
+                score: match.score,
+                metadata: match.metadata
+            }))
+        } catch (error) {
+            console.error('Error finding similar chunks:', error)
+            return [] // Return empty array if query fails
+        }
     }
 
     private buildPromt(question: string, context: String): string {

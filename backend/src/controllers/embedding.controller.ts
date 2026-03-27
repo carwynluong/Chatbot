@@ -1,8 +1,7 @@
 import { Request, Response } from 'express'
-import { EmbeddingService } from '../services/embedding.service'
+import embeddingService from '../services/embedding.service'
 import statusCodes from '../constants/statusCodes'
 import S3Service from '../services/uploads.service'
-const embeddingService = new EmbeddingService()
 
 export const processFileEmbedding = async (req: Request, res: Response) => {
     try {
@@ -43,16 +42,25 @@ export const processFileEmbedding = async (req: Request, res: Response) => {
     }
 }
 
-export const initializeDatabase = async (req: Request, res: Response) => {
+export const initializePinecone = async (req: Request, res: Response) => {
     try {
-        await embeddingService.initializeDatabase()
-        res.status(200).json({
-            message: 'Database initialized successfully'
-        })
+        const isHealthy = await embeddingService.healthCheck()
+        if (isHealthy) {
+            res.status(200).json({
+                message: 'Pinecone connection healthy',
+                status: 'connected'
+            })
+        } else {
+            res.status(500).json({
+                message: 'Pinecone connection failed',
+                status: 'disconnected'
+            })
+        }
     } catch (error) {
-        console.error('Error in initializeDatabase controller:', error)
+        console.error('Error checking Pinecone connection:', error)
         res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-            error: 'Failed to initialize database'
+            error: 'Failed to check Pinecone connection',
+            details: error instanceof Error ? error.message : 'Unknown error'
         })
     }
 }

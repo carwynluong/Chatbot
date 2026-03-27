@@ -1,9 +1,7 @@
-// Cập nhật: d:\Nodejs\genAI\frontend\src\pages\Chat.tsx
 import { useEffect, useState } from 'react'
 import { useAuth } from '../api/apiUserGenAI'
 import type { Message } from '../interfaces'
 import ChatAPI from '../api/apiChatGenAI'
-import Header from '../components/Header'
 
 export default function ChatInterface() {
     const [messages, setMessages] = useState<Message[]>([])
@@ -76,68 +74,106 @@ export default function ChatInterface() {
         }
     }
 
+    if (!user) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-4">Chào mừng đến với AI ChatBot</h2>
+                    <p className="text-gray-600 mb-6">Vui lòng đăng nhập để bắt đầu trò chuyện</p>
+                </div>
+            </div>
+        )
+    }
+
     return (
-        <div className="flex flex-col h-screen bg-gray-100">
-            <Header title="GenAI Chat" showUploadButton />
+        <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="bg-white border-b border-gray-200 px-6 py-4">
+                <h1 className="text-xl font-semibold text-gray-900">AI ChatBot</h1>
+                <p className="text-sm text-gray-500">Trò chuyện thông minh với AI</p>
+            </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.length === 0 && (
-                    <div className="text-center text-gray-500 mt-8">
-                        Bắt đầu cuộc trò chuyện với AI Assistant
-                    </div>
-                )}
-
-                {messages.map((message) => (
-                    <div
-                        key={message.id}
-                        className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
-                    >
-                        <div
-                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${message.isUser
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white text-gray-800 shadow-sm'
-                                }`}
-                        >
-                            <p className="text-sm">{message.content}</p>
-                            <p className={`text-xs mt-1 ${message.isUser ? 'text-blue-100' : 'text-gray-500'
-                                }`}>
-                                {message.timestamp.toLocaleTimeString()}
+            <div className="flex-1 overflow-y-auto p-6">
+                {messages.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                        <div className="text-center max-w-md">
+                            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-3.582 8-8 8a8.013 8.013 0 01-7-4c0-4.418 3.582-8 8-8s8 3.582 8 8z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">Bắt đầu cuộc trò chuyện</h3>
+                            <p className="text-gray-500 text-sm">
+                                Hãy đặt câu hỏi hoặc bắt đầu cuộc trò chuyện với AI assistant của chúng tôi
                             </p>
                         </div>
                     </div>
-                ))}
-
-                {isLoading && (
-                    <div className="flex justify-start">
-                        <div className="bg-white text-gray-800 shadow-sm max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
-                            <div className="flex items-center space-x-2">
-                                <div className="animate-pulse">AI đang trả lời...</div>
+                ) : (
+                    <div className="space-y-6 max-w-4xl mx-auto">
+                        {messages.map((message) => (
+                            <div
+                                key={message.id}
+                                className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+                            >
+                                <div
+                                    className={`max-w-2xl px-4 py-3 rounded-lg ${
+                                        message.isUser
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-white text-gray-800 shadow-sm border border-gray-200'
+                                    }`}
+                                >
+                                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                                    <p className={`text-xs mt-2 ${
+                                        message.isUser ? 'text-blue-100' : 'text-gray-500'
+                                    }`}>
+                                        {message.timestamp.toLocaleTimeString('vi-VN')}
+                                    </p>
+                                </div>
                             </div>
-                        </div>
+                        ))}
+
+                        {isLoading && (
+                            <div className="flex justify-start">
+                                <div className="bg-white text-gray-800 shadow-sm border border-gray-200 max-w-2xl px-4 py-3 rounded-lg">
+                                    <div className="flex items-center space-x-2">
+                                        <div className="flex space-x-1">
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                        </div>
+                                        <span className="text-sm text-gray-500">AI đang suy nghĩ...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
 
             {/* Input */}
-            <div className="bg-white border-t p-4">
-                <form onSubmit={sendMessage} className="flex gap-2">
-                    <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Nhập câu hỏi của bạn..."
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        disabled={isLoading}
-                    />
-                    <button
-                        type="submit"
-                        disabled={isLoading || !input.trim()}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Gửi
-                    </button>
-                </form>
+            <div className="bg-white border-t border-gray-200 p-6">
+                <div className="max-w-4xl mx-auto">
+                    <form onSubmit={sendMessage} className="relative">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            placeholder="Nhập tin nhắn của bạn..."
+                            className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                            disabled={isLoading}
+                        />
+                        <button
+                            type="submit"
+                            disabled={isLoading || !input.trim()}
+                            className="absolute right-2 top-2 p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                            </svg>
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
     )

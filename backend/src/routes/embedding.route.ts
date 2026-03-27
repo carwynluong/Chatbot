@@ -1,6 +1,5 @@
-import { processFileEmbedding } from '../controllers/embedding.controller'
+import { processFileEmbedding, initializePinecone } from '../controllers/embedding.controller'
 import { requireAuth } from '../middleware/auth.middleware'
-import { initializeDatabase } from '../controllers/embedding.controller'
 import { Router } from 'express'
 
 const router = Router()
@@ -32,15 +31,17 @@ router.post('/process', requireAuth, processFileEmbedding)
 
 /**
  * @swagger
- * /api/v1/embedding/init-db:
- *   post:
- *     summary: Initialize embedding database
+ * /api/v1/embedding/health:
+ *   get:
+ *     summary: Check Pinecone connection health
  *     tags: [Embedding]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Database initialized successfully
+ *         description: Pinecone connection healthy
+ *       500:
+ *         description: Pinecone connection failed
  */
-router.post('/init-db', requireAuth, initializeDatabase)
+router.get('/health', requireAuth, initializePinecone)
 export default router

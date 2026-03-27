@@ -4,10 +4,12 @@ import cookieParser from 'cookie-parser'
 import bodyParser from 'body-parser'
 import { PORT, FRONTEND_URL } from './config/env'
 import cors from 'cors'
-import pool from './providers/postgresql.connect'
+import { dynamoClient } from './providers/dynamodb.connect'
+import { ListTablesCommand } from '@aws-sdk/client-dynamodb'
+import pineconeService from './providers/pinecone.connect'
 import S3Router from './routes/uploads.route'
-import DynamoDBRouter from './routes/auth.route'
-import BedrockRouter from './routes/embedding.route'
+import AuthRouter from './routes/auth.route'
+import EmbeddingRouter from './routes/embedding.route'
 import ChatRouter from './routes/chat.route'
 import { setupSwagger } from './config/swagger'
 
@@ -23,15 +25,33 @@ app.use(cors())
 
 setupSwagger(app)
 
-const databaseConnection = async () =>{
+const checkConnections = async () => {
     try {
-        const client = await pool.connect()
-        await client.query('SELECT NOW()')
-        client.release()
-        console.log('Database connected successfully')
+        // Test DynamoDB connection
+        console.log('🔍 Testing DynamoDB connection...')
+        try {
+            const command = new ListTablesCommand({})
+            const result = await dynamoClient.send(command)
+            console.log(`✅ DynamoDB connection successful - Found ${result.TableNames?.length || 0} tables`)
+        } catch (error) {
+            console.warn('⚠️  DynamoDB connection issue:', (error as Error).message)
+        }
+        
+        // Test Pinecone connection  
+        console.log('🔍 Testing Pinecone connection...')
+        const pineconeHealthy = await pineconeService.healthCheck()
+        if (pineconeHealthy) {
+            console.log('✅ Pinecone connection successful')
+        } else {
+            console.warn('⚠️  Pinecone connection failed - check API key and index')
+        }
+        
+        console.log('🚀 Backend server ready for development!')
     } catch (error) {
-        console.error('Database connection failed:', error)
-        process.exit(1)
+        console.error('❌ Connection error:', error)
+        console.warn('⚠️  Running in development mode with limited functionality')
+        console.log('💡 Check your .env file for correct API keys and configuration')
+        // Don't exit in development - let the app run
     }
 }
 
@@ -42,13 +62,14 @@ app.use(cors({
 
 app.use('/health', (req, res) => res.send('API is running...'))
 
-app.use('/api/v1/auth', DynamoDBRouter)
+app.use('/api/v1/auth', AuthRouter)
 app.use('/api/v1/s3', S3Router)
-app.use('/api/v1/embedding', BedrockRouter)
+app.use('/api/v1/embedding', EmbeddingRouter)
 app.use('/api/v1/chat', ChatRouter)
 
 app.listen(PORT, async () => {
-    console.log(`Server is running on http://localhost:${PORT}`)
-    console.log(`Swagger docs available at http://localhost:${PORT}/api-docs`)
-    await databaseConnection()
+    console.log(`🚀 Server is running on http://localhost:${PORT}`)
+    console.log(`📚 Swagger docs available at http://localhost:${PORT}/api-docs`)
+    console.log(`🎯 Health check: http://localhost:${PORT}/health`)
+    await checkConnections()
 })

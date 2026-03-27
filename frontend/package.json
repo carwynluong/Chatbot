@@ -11,6 +11,8 @@
     "start": "vite --host 0.0.0.0 --port 5000"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.9",
+    "@heroicons/react": "^2.2.0",
     "@tailwindcss/vite": "^4.1.14",
     "axios": "^1.12.2",
     "react": "^18.3.1",
@@ -25,6 +27,7 @@
     "@types/react": "^19.1.16",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^5.0.4",
+    "baseline-browser-mapping": "^2.9.19",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",

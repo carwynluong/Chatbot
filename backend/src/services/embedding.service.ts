@@ -1,22 +1,40 @@
-import pool from "../providers/postgresql.connect"
-import { EMBEDDING_MODELID } from '../config/env'
+import { EMBEDDING_MODELID, PINECONE_INDEX_NAME } from '../config/env'
 import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
 import bedrockClient from "../providers/bedrock.connect"
+import pineconeService from "../providers/pinecone.connect"
+import documentService from "./document.service"
 import path from 'path'
 import PDFParser from 'pdf2json'
 import mammoth from 'mammoth'
 import axios from 'axios'
+
+interface PineconeVector {
+    id: string
+    values: number[]
+    metadata: {
+        documentId: string
+        chunkIndex: number
+        content: string
+        fileName: string
+        fileType: string
+    }
+}
+
 export class EmbeddingService {
 
     constructor() {
-        this.initializeDatabase().catch(console.error)
+        // Check Pinecone connection
+        this.initializePinecone().catch(error => {
+            console.warn('⚠️  Pinecone initialization failed:', error.message)
+        })
     }
 
     // Process file
     async processFileDirect(fileName: string, cloudFrontUrl: string): Promise<void> {
         await this.processSingleFile(fileName, cloudFrontUrl)
     }
+
     // Process multifile
     async processMultipleFilesDirect(fileUrls: { key: string, url: string }[]): Promise<void> {
         const results = await Promise.allSettled(
@@ -32,32 +50,65 @@ export class EmbeddingService {
 
     // Process once file from S3 service
     private async processSingleFile(fileName: string, cloudFrontUrl: string): Promise<void> {
-        const content = await this.extractFromCloudFront(cloudFrontUrl)
-        const chunks = await this.chunkContent(content)
-
-        const embeddings = await Promise.all(
-            chunks.map(chunk => this.generateEmbedding(chunk))
-        )
-
-        const client = await pool.connect()
         try {
-            await client.query('BEGIN')
+            // Create document metadata in DynamoDB
+            await documentService.createDocument({
+                fileName: fileName,
+                fileSize: 0, // Will be updated after processing
+                fileType: path.extname(fileName).toLowerCase(),
+                s3Key: fileName,
+                s3Url: cloudFrontUrl
+            })
+
+            const content = await this.extractFromCloudFront(cloudFrontUrl)
+            const chunks = await this.chunkContent(content)
+
+            // Update document with total chunks
+            await documentService.updateDocumentStatus(fileName, 'processing', chunks.length)
+
+            const vectors: PineconeVector[] = []
+            
             for (let i = 0; i < chunks.length; i++) {
-                await this.saveEmbedding(client, fileName, i, chunks[i], embeddings[i])
+                const embedding = await this.generateEmbedding(chunks[i])
+                const vectorId = `${fileName}_chunk_${i}`
+                
+                vectors.push({
+                    id: vectorId,
+                    values: embedding,
+                    metadata: {
+                        documentId: fileName,
+                        chunkIndex: i,
+                        content: chunks[i],
+                        fileName: fileName,
+                        fileType: path.extname(fileName).toLowerCase()
+                    }
+                })
             }
-            await client.query('COMMIT')
+
+            // Upsert vectors to Pinecone in batches
+            await this.upsertVectorsToPinecone(vectors)
+
+            // Update document status to embedded
+            await documentService.updateDocumentStatus(fileName, 'embedded', chunks.length)
+
+            console.log(`✅ Successfully processed and embedded file: ${fileName}`)
+            
         } catch (error) {
-            await client.query('ROLaLBACK')
+            console.error(`❌ Error processing file ${fileName}:`, error)
+            await documentService.updateDocumentStatus(
+                fileName, 
+                'error', 
+                0, 
+                error instanceof Error ? error.message : 'Unknown error'
+            )
             throw error
-        } finally {
-            client.release()
         }
     }
+
     // Get data from S3 
     private async extractFromCloudFront(url: string): Promise<string> {
         const response = await axios.get(url, { responseType: 'arraybuffer' })
         const buffer = Buffer.from(response.data as ArrayBuffer)
-        // Nó tách phần đuôi file (extension) từ đường dẫn hoặc URL.
         const fileExtension = path.extname(url).toLowerCase()
 
         switch (fileExtension) {
@@ -72,7 +123,7 @@ export class EmbeddingService {
                 return buffer.toString('utf-8')
         }
     }
-    // https://github.com/modesty/pdf2json
+
     private async extractPdfText(buffer: Buffer): Promise<string> {
         return new Promise((resolve, reject) => {
             const pdfParser = new PDFParser()
@@ -96,6 +147,7 @@ export class EmbeddingService {
             pdfParser.parseBuffer(buffer)
         })
     }
+
     // Chunk content 
     private async chunkContent(content: string): Promise<string[]> {
         const splitter = new RecursiveCharacterTextSplitter({
@@ -104,6 +156,7 @@ export class EmbeddingService {
         })
         return await splitter.splitText(content)
     }
+
     // Generate Embedding with amazon bedrock
     async generateEmbedding(text: string): Promise<number[]> {
         const command = new InvokeModelCommand({
@@ -116,34 +169,82 @@ export class EmbeddingService {
         const data = JSON.parse(new TextDecoder().decode(res.body))
         return data.embedding
     }
-    // Save to postgresql
-    private async saveEmbedding(client: any, filename: string, chunkIndex: number, content: string, embedding: number[]): Promise<void> {
-        const query = `
-            INSERT INTO document_embeddings (file_name, chunk_index, content, embedding)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (file_name, chunk_index) DO NOTHING
-        `
-        const embeddingStr = `[${embedding.join(',')}]`
-        await client.query(query, [filename, chunkIndex, content, embeddingStr])
+
+    // Upsert vectors to Pinecone
+    private async upsertVectorsToPinecone(vectors: PineconeVector[]): Promise<void> {
+        const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
+        
+        // Upsert in batches of 100 (Pinecone limit)
+        const batchSize = 100
+        for (let i = 0; i < vectors.length; i += batchSize) {
+            const batch = vectors.slice(i, i + batchSize)
+            await index.upsert(batch)
+            
+            console.log(`Upserted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}`)
+        }
     }
-    // Create Table to database
-    async initializeDatabase(): Promise<void> {
-        const createTableQuery = `
-            CREATE EXTENSION IF NOT EXISTS vector;
+
+    // Initialize Pinecone connection
+    private async initializePinecone(): Promise<void> {
+        try {
+            await pineconeService.healthCheck()
+            console.log('✅ Pinecone initialized successfully')
+        } catch (error) {
+            console.warn('⚠️  Failed to initialize Pinecone:', error)
+            throw error
+        }
+    }
+
+    // Query similar documents from Pinecone
+    async querySimilarDocuments(queryEmbedding: number[], topK: number = 5): Promise<any[]> {
+        try {
+            const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
             
-            CREATE TABLE IF NOT EXISTS document_embeddings (
-                id SERIAL PRIMARY KEY,
-                file_name VARCHAR(255) NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                embedding vector(1536),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (file_name, chunk_index)
-            );
+            const queryResponse = await index.query({
+                vector: queryEmbedding,
+                topK: topK,
+                includeMetadata: true,
+                includeValues: false
+            })
+
+            return queryResponse.matches || []
+        } catch (error) {
+            console.error('Error querying Pinecone:', error)
+            throw error
+        }
+    }
+
+    // Delete document embeddings from Pinecone
+    async deleteDocumentEmbeddings(documentId: string): Promise<void> {
+        try {
+            const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
             
-            CREATE INDEX IF NOT EXISTS idx_document_embeddings_file ON document_embeddings(file_name);
-            CREATE INDEX IF NOT EXISTS idx_document_embeddings_embedding ON document_embeddings USING ivfflat (embedding vector_cosine_ops);
-        `
-        await pool.query(createTableQuery)
+            // Delete by metadata filter
+            await index.deleteMany({
+                filter: {
+                    documentId: { $eq: documentId }
+                }
+            })
+
+            // Update document status
+            await documentService.deleteDocument(documentId)
+            
+            console.log(`✅ Deleted embeddings for document: ${documentId}`)
+        } catch (error) {
+            console.error(`❌ Error deleting document embeddings: ${documentId}`, error)
+            throw error
+        }
+    }
+
+    // Health check for service
+    async healthCheck(): Promise<boolean> {
+        try {
+            return await pineconeService.healthCheck()
+        } catch (error) {
+            console.error('Embedding service health check failed:', error)
+            return false
+        }
     }
 }
+
+export default new EmbeddingService()

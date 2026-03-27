@@ -4,7 +4,7 @@ import Login from './pages/Login'
 import { useAuth } from './api/apiUserGenAI'
 import Register from './pages/Register'
 import ChatInterface from './pages/Chat'
-import UploadPage from './pages/Uploads'
+import Layout from './components/Layout'
 import { useEffect } from 'react'
 
 function App() {
@@ -17,11 +17,19 @@ function App() {
   return (
     <>
       <Routes>
-        <Route path='/login' element={!isAuthenticated ? <Login /> : <Navigate to="/chat" />} />
+        {/* Auth routes without layout */}
+        <Route path='/login' element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
         <Route path='/register' element={!isAuthenticated ? <Register /> : <Navigate to="/login" />} />
-        <Route path='/chat' element={isAuthenticated ? <ChatInterface /> : <Navigate to="/login" />} />
-        <Route path='/upload' element={isAuthenticated ? <UploadPage /> : <Navigate to="/login" />} />
-        <Route path='/' element={<Navigate to={isAuthenticated ? "/chat" : "/login"} />} />
+        
+        {/* Main app routes with layout */}
+        <Route path='/*' element={
+          <Layout>
+            <Routes>
+              <Route path='/' element={<ChatInterface />} />
+              <Route path='/chat' element={<Navigate to="/" />} />
+            </Routes>
+          </Layout>
+        } />
       </Routes>
       <Toaster position='top-right' />
     </>

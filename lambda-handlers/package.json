@@ -1,0 +1,16 @@
+{
+  "name": "lambda-handlers",
+  "version": "1.0.0",
+  "description": "Lambda function handlers for Chatbot API",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.119",
+    "@types/node": "^20.11.24",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {}
+}
