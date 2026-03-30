@@ -6,6 +6,9 @@ import { PORT, FRONTEND_URL } from './config/env'
 import cors from 'cors'
 import { dynamoClient } from './providers/dynamodb.connect'
 import { ListTablesCommand } from '@aws-sdk/client-dynamodb'
+import { HeadBucketCommand } from '@aws-sdk/client-s3'
+import s3Client from './providers/s3.connect'
+import { S3_BUCKET_NAME } from './config/env'
 import pineconeService from './providers/pinecone.connect'
 import S3Router from './routes/uploads.route'
 import AuthRouter from './routes/auth.route'
@@ -44,6 +47,16 @@ const checkConnections = async () => {
             console.log('✅ Pinecone connection successful')
         } else {
             console.warn('⚠️  Pinecone connection failed - check API key and index')
+        }
+        
+        // Test S3 connection
+        console.log('🔍 Testing S3 connection...')
+        try {
+            const s3Command = new HeadBucketCommand({ Bucket: S3_BUCKET_NAME })
+            await s3Client.send(s3Command)
+            console.log(`✅ S3 connection successful - bucket ${S3_BUCKET_NAME} accessible`)
+        } catch (error) {
+            console.warn(`⚠️  S3 connection issue with bucket ${S3_BUCKET_NAME}:`, (error as Error).message)
         }
         
         console.log('🚀 Backend server ready for development!')

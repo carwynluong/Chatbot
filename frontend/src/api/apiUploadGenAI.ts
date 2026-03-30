@@ -6,6 +6,18 @@ import type {
 } from '../interfaces/upload.interface'
 
 export class UploadGenAIAPI {
+    async uploadFile(file: File): Promise<any> {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const res = await axios.post('/s3/uploads', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        })
+        return res.data
+    }
+
     async uploadMultipleFiles(files: File[]): Promise<MultipleUploadResponse> {
         const formData = new FormData()
         files.forEach(file => {
@@ -27,6 +39,11 @@ export class UploadGenAIAPI {
 
     async getFileUrl(key: string): Promise<FileUrlResponse> {
         const res = await axios.get<FileUrlResponse>(`/s3/uploads/${key}`)
+        return res.data
+    }
+
+    async deleteFile(key: string): Promise<any> {
+        const res = await axios.delete(`/s3/uploads/${key}`)
         return res.data
     }
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../api/apiUserGenAI'
 import ChatAPI from '../api/apiChatGenAI'
 import UploadModal from './UploadModal'
@@ -26,6 +26,8 @@ export default function Sidebar() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const currentChatId = searchParams.get('chat')
 
   useEffect(() => {
     loadChatSessions()
@@ -51,8 +53,13 @@ export default function Sidebar() {
   }
 
   const startNewChat = () => {
-    // Reset chat or navigate to new chat
-    window.location.reload() // Simple approach to reset chat
+    // Navigate to new chat with unique ID
+    const newChatId = `chat_${Date.now()}`
+    navigate(`/?chat=${newChatId}&new=true`)
+  }
+
+  const selectChatSession = (sessionId: string) => {
+    navigate(`/?chat=${sessionId}`)
   }
 
   const handleLogout = () => {
@@ -111,7 +118,10 @@ export default function Sidebar() {
             {chatSessions.map((session) => (
               <div
                 key={session.id}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors group"
+                onClick={() => selectChatSession(session.id)}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors group ${
+                  currentChatId === session.id ? 'bg-gray-800' : ''
+                }`}
               >
                 <ChatBubbleLeftRightIcon className="w-4 h-4 text-gray-400" />
                 <div className="flex-1 min-w-0">

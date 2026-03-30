@@ -22,6 +22,7 @@ interface PineconeVector {
 }
 
 export class EmbeddingService {
+    private processingQueue: Set<string> = new Set()
 
     constructor() {
         // Check Pinecone connection
@@ -102,6 +103,8 @@ export class EmbeddingService {
                 error instanceof Error ? error.message : 'Unknown error'
             )
             throw error
+        } finally {
+            this.processingQueue.delete(fileName)
         }
     }
 

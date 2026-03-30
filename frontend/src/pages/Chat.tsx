@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../api/apiUserGenAI'
 import type { Message } from '../interfaces'
 import ChatAPI from '../api/apiChatGenAI'
@@ -7,10 +8,53 @@ export default function ChatInterface() {
     const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState('')
     const [isLoading, setIsLoading] = useState(false)
+    const [currentChatId, setCurrentChatId] = useState<string | null>(null)
     const { user } = useAuth()
+    const [searchParams] = useSearchParams()
+    
+    const chatId = searchParams.get('chat')
+    const isNewChat = searchParams.get('new') === 'true'
 
     useEffect(() => {
-        if (user?.id) {
+        if (!user?.id) return
+        
+        // If it's a new chat, start with empty messages
+        if (isNewChat) {
+            setMessages([])
+            setCurrentChatId(chatId)
+            return
+        }
+        
+        // If specific chat ID is provided, try to load that session
+        if (chatId && chatId !== currentChatId) {
+            ChatAPI.getChatHistory(user.id).then((response) => {
+                if (response.history && response.history.length > 0) {
+                    const targetSession = response.history.find((session: any) => 
+                        session.sessionId === chatId || `session-${response.history.indexOf(session)}` === chatId
+                    )
+                    
+                    if (targetSession) {
+                        const messagesWithDate = targetSession.messages.map((msg: any) => ({
+                            ...msg,
+                            timestamp: new Date(msg.timestamp)
+                        }))
+                        setMessages(messagesWithDate)
+                        setCurrentChatId(chatId)
+                    } else {
+                        // Session not found, start new chat
+                        setMessages([])
+                        setCurrentChatId(chatId)
+                    }
+                } else {
+                    setMessages([])
+                    setCurrentChatId(chatId)
+                }
+            }).catch(() => {
+                setMessages([])
+                setCurrentChatId(chatId)
+            })
+        } else if (!chatId) {
+            // No specific chat ID, load latest session (default behavior)
             ChatAPI.getChatHistory(user.id).then((response) => {
                 if (response.history && response.history.length > 0) {
                     const latestSession = response.history.reduce((latest, current) => 
@@ -22,12 +66,13 @@ export default function ChatInterface() {
                         timestamp: new Date(msg.timestamp)
                     }))
                     setMessages(messagesWithDate)
+                    setCurrentChatId(latestSession.sessionId || 'default')
                 }
             }).catch(() => {
                 setMessages([])
             })
         }
-    }, [user])
+    }, [user, chatId, isNewChat, currentChatId])
 
     const sendMessage = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -58,6 +103,7 @@ export default function ChatInterface() {
             setMessages(finalMessages)
 
             if (user?.id) {
+                // Save with current chat ID as session identifier
                 ChatAPI.saveChatHistory(user.id, finalMessages)
             }
         } catch (error) {

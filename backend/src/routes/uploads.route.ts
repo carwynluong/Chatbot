@@ -97,8 +97,23 @@ router.get('/list-object', requireAuth, S3Controller.listFiles)
  *     responses:
  *       200:
  *         description: File URL retrieved
+ *   delete:
+ *     summary: Delete file by key
+ *     tags: [S3]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: File deleted successfully
  */
 router.get('/uploads/:key', requireAuth, S3Controller.getFileUrl)
+router.delete('/uploads/:key', requireAuth, S3Controller.deleteFile)
 
 
 export default router

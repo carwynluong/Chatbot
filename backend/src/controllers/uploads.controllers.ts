@@ -26,7 +26,10 @@ export class S3Controller {
             })
         } catch (error) {
             console.error('Error in uploadFile controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ message: 'Upload failed', error })
+            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
+                message: 'Upload failed', 
+                error: error instanceof Error ? error.message : 'Unknown error'
+            })
         }
     }
 
@@ -62,21 +65,43 @@ export class S3Controller {
             })
         } catch (error) {
             console.error('Error in listFiles controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ message: 'Failed to list files', error })
+            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
+                message: 'Failed to list files', 
+                error: error instanceof Error ? error.message : 'Unknown error'
+            })
         }
     }
 
     async getFileUrl(req: Request, res: Response) {
         try {
             const { key } = req.params
-            const url = S3Service.getCloudFrontUrl(key)
+            const url = S3Service.getS3Url(key)
             res.status(statusCodes.OK).json({
                 message: 'File URL generated successfully',
                 url
             })
         } catch (error) {
             console.error('Error in getFileUrl controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ message: 'Failed to get file URL', error })
+            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
+                message: 'Failed to get file URL', 
+                error: error instanceof Error ? error.message : 'Unknown error'
+            })
+        }
+    }
+
+    async deleteFile(req: Request, res: Response) {
+        try {
+            const { key } = req.params
+            await S3Service.deleteFile(key)
+            res.status(statusCodes.OK).json({
+                message: 'File deleted successfully'
+            })
+        } catch (error) {
+            console.error('Error in deleteFile controller:', error)
+            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
+                message: 'Failed to delete file', 
+                error: error instanceof Error ? error.message : 'Unknown error'
+            })
         }
     }
 }
