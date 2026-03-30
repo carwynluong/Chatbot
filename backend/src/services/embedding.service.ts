@@ -110,20 +110,33 @@ export class EmbeddingService {
 
     // Get data from S3 
     private async extractFromCloudFront(url: string): Promise<string> {
-        const response = await axios.get(url, { responseType: 'arraybuffer' })
-        const buffer = Buffer.from(response.data as ArrayBuffer)
-        const fileExtension = path.extname(url).toLowerCase()
+        try {
+            console.log(`📄 Extracting content from: ${url}`)
+            const response = await axios.get(url, { responseType: 'arraybuffer' })
+            const buffer = Buffer.from(response.data as ArrayBuffer)
+            const fileExtension = path.extname(url).toLowerCase()
+            
+            console.log(`📄 File extension: ${fileExtension}`)
+            console.log(`📄 File size: ${buffer.length} bytes`)
 
-        switch (fileExtension) {
-            case '.pdf':
-                return await this.extractPdfText(buffer)
-            case '.docx':
-                const result = await mammoth.extractRawText({ buffer })
-                return result.value
-            case '.txt':
-                return buffer.toString('utf-8')
-            default:
-                return buffer.toString('utf-8')
+            switch (fileExtension) {
+                case '.pdf':
+                    return await this.extractPdfText(buffer)
+                case '.docx':
+                    const result = await mammoth.extractRawText({ buffer })
+                    console.log(`📄 Extracted ${result.value.length} characters from DOCX file`)
+                    return result.value
+                case '.txt':
+                    const textContent = buffer.toString('utf-8')
+                    console.log(`📄 Extracted ${textContent.length} characters from TXT file`)
+                    return textContent
+                default:
+                    console.log(`⚠️  Unknown file type ${fileExtension}, treating as text`)
+                    return buffer.toString('utf-8')
+            }
+        } catch (error) {
+            console.error(`❌ Error extracting content from ${url}:`, error)
+            throw new Error(`Failed to extract content: ${error instanceof Error ? error.message : error}`)
         }
     }
 
@@ -162,28 +175,48 @@ export class EmbeddingService {
 
     // Generate Embedding with amazon bedrock
     async generateEmbedding(text: string): Promise<number[]> {
-        const command = new InvokeModelCommand({
-            modelId: EMBEDDING_MODELID,
-            body: JSON.stringify({ inputText: text }),
-            contentType: 'application/json'
-        })
+        try {
+            console.log(`🔄 Generating embedding for text chunk (${text.length} characters)`)
+            const command = new InvokeModelCommand({
+                modelId: EMBEDDING_MODELID,
+                body: JSON.stringify({ inputText: text }),
+                contentType: 'application/json'
+            })
 
-        const res = await bedrockClient.send(command)
-        const data = JSON.parse(new TextDecoder().decode(res.body))
-        return data.embedding
+            const res = await bedrockClient.send(command)
+            const data = JSON.parse(new TextDecoder().decode(res.body))
+            console.log(`✅ Generated embedding with ${data.embedding?.length || 0} dimensions`)
+            return data.embedding
+        } catch (error) {
+            console.error(`❌ Error generating embedding:`, error)
+            throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : error}`)
+        }
     }
 
     // Upsert vectors to Pinecone
     private async upsertVectorsToPinecone(vectors: PineconeVector[]): Promise<void> {
-        const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
-        
-        // Upsert in batches of 100 (Pinecone limit)
-        const batchSize = 100
-        for (let i = 0; i < vectors.length; i += batchSize) {
-            const batch = vectors.slice(i, i + batchSize)
-            await index.upsert(batch)
+        try {
+            console.log(`🔄 Upserting ${vectors.length} vectors to Pinecone index: ${PINECONE_INDEX_NAME}`)
+            const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
             
-            console.log(`Upserted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}`)
+            // Upsert in batches of 100 (Pinecone limit)
+            const batchSize = 100
+            for (let i = 0; i < vectors.length; i += batchSize) {
+                const batch = vectors.slice(i, i + batchSize)
+                const batchNumber = Math.floor(i / batchSize) + 1
+                const totalBatches = Math.ceil(vectors.length / batchSize)
+                
+                console.log(`🔄 Upserting batch ${batchNumber}/${totalBatches} (${batch.length} vectors)`)
+                
+                await index.upsert(batch)
+                
+                console.log(`✅ Batch ${batchNumber}/${totalBatches} completed`)
+            }
+            
+            console.log(`✅ Successfully upserted all ${vectors.length} vectors to Pinecone`)
+        } catch (error) {
+            console.error(`❌ Error upserting vectors to Pinecone:`, error)
+            throw new Error(`Failed to upsert vectors to Pinecone: ${error instanceof Error ? error.message : error}`)
         }
     }
 

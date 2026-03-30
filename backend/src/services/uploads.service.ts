@@ -1,5 +1,5 @@
-import { ListObjectsCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
-// import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { ListObjectsCommand, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import s3Client from "../providers/s3.connect"
 import { S3_BUCKET_NAME, CLOUDFRONT_URL } from "../config/env"
 
@@ -61,8 +61,24 @@ export class S3Service {
         await s3Client.send(command)
         return true
     }
+    async getPresignedDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
+        try {
+            const command = new GetObjectCommand({
+                Bucket: S3_BUCKET_NAME,
+                Key: key,
+            })
+            return await getSignedUrl(s3Client, command, { expiresIn })
+        } catch (error) {
+            console.error(`Error creating presigned download URL for ${key}:`, error)
+            throw new Error(`Failed to create download URL: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
+    }
+    
     getCloudFrontUrl(key: string): string {
-        return `${CLOUDFRONT_URL}/${key}`
+        // For now, use pre-signed URL instead of CloudFront
+        // TODO: Setup CloudFront distribution and update this method
+        console.warn('⚠️  Using S3 direct URL instead of CloudFront - consider setting up CloudFront for better performance')
+        return this.getS3Url(key)
     }
     
     getS3Url(key: string): string {

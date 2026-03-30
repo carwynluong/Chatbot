@@ -102,19 +102,23 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
     }
 
     setIsEmbedding(true)
-    const embeddingPromises = selectedFiles.map(async (fileKey) => {
-      try {
+    
+    try {
+      // Use batch processing for multiple files for better performance
+      if (selectedFiles.length > 1) {
+        await ApiEmbeddingAI.processFiles(selectedFiles)
+        selectedFiles.forEach(fileKey => {
+          setEmbeddedFiles(prev => new Set([...prev, fileKey]))
+        })
+        toast.success(`Tạo embedding cho ${selectedFiles.length} files thành công`)
+      } else {
+        // Single file processing
+        const fileKey = selectedFiles[0]
         await ApiEmbeddingAI.createEmbedding(fileKey)
         setEmbeddedFiles(prev => new Set([...prev, fileKey]))
         toast.success(`Tạo embedding cho ${fileKey} thành công`)
-      } catch (error) {
-        toast.error(`Tạo embedding cho ${fileKey} thất bại`)
-        throw error
       }
-    })
-
-    try {
-      await Promise.all(embeddingPromises)
+      
       setSelectedFiles([])
       await loadFiles()
     } catch (error) {

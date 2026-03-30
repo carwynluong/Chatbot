@@ -10,6 +10,14 @@ export class ApiEmbeddingAI {
         return res.data
     }
 
+    async createEmbedding(fileKey: string, fileName?: string): Promise<EmbeddingResponse> {
+        const res = await axios.post<EmbeddingResponse>('/embedding/process', {
+            fileKey,
+            fileName
+        })
+        return res.data
+    }
+
     async initializeDatabase(): Promise<EmbeddingResponse> {
         const res = await axios.post<EmbeddingResponse>('/embedding/init-db')
         return res.data
