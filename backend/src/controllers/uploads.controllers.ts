@@ -42,7 +42,7 @@ export class S3Controller {
 
     //         const key = `uploads/${Date.now()}-${filename}`
     //         const uploadUrl = await S3Service.getPresignedUploadUrl(key)
-    //         const accessUrl = S3Service.getCloudFrontUrl(key)
+    //         const accessUrl = S3Service.getS3Url(key)
 
     //         res.status(statusCodes.OK).json({
     //             message: 'Presigned URL generated successfully',

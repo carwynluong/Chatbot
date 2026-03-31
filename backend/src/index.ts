@@ -6,10 +6,11 @@ import { PORT, FRONTEND_URL } from './config/env'
 import cors from 'cors'
 import { dynamoClient } from './providers/dynamodb.connect'
 import { ListTablesCommand } from '@aws-sdk/client-dynamodb'
-import { HeadBucketCommand } from '@aws-sdk/client-s3'
+import { HeadBucketCommand, CreateBucketCommand } from '@aws-sdk/client-s3'
 import s3Client from './providers/s3.connect'
 import { S3_BUCKET_NAME } from './config/env'
 import pineconeService from './providers/pinecone.connect'
+import { testAzureConnection } from './providers/azure-ai.connect'
 import S3Router from './routes/uploads.route'
 import AuthRouter from './routes/auth.route'
 import EmbeddingRouter from './routes/embedding.route'
@@ -48,15 +49,45 @@ const checkConnections = async () => {
         } else {
             console.warn('⚠️  Pinecone connection failed - check API key and index')
         }
+
+        // Test Azure AI connection  
+        console.log('🔍 Testing Azure AI connection...')
+        const isAzureReady = await testAzureConnection()
+        if (isAzureReady) {
+            console.log('✅ Azure AI connection successful')
+        } else {
+            console.warn('⚠️  Azure AI connection issues detected')
+        }
         
         // Test S3 connection
         console.log('🔍 Testing S3 connection...')
         try {
+            // First check if bucket exists
             const s3Command = new HeadBucketCommand({ Bucket: S3_BUCKET_NAME })
             await s3Client.send(s3Command)
             console.log(`✅ S3 connection successful - bucket ${S3_BUCKET_NAME} accessible`)
-        } catch (error) {
-            console.warn(`⚠️  S3 connection issue with bucket ${S3_BUCKET_NAME}:`, (error as Error).message)
+        } catch (error: any) {
+            console.warn(`⚠️  S3 bucket ${S3_BUCKET_NAME} not accessible in region us-east-1`)
+            
+            if (error.name === 'NoSuchBucket') {
+                console.log('🔧 Bucket does not exist. Attempting to create...')
+                try {
+                    const createCommand = new CreateBucketCommand({ 
+                        Bucket: S3_BUCKET_NAME,
+                        // Don't specify LocationConstraint for us-east-1 (default region)
+                    })
+                    await s3Client.send(createCommand)
+                    console.log(`✅ Created S3 bucket: ${S3_BUCKET_NAME}`)
+                } catch (createError: any) {
+                    console.error(`❌ Failed to create bucket: ${createError.message}`)
+                    console.log('💡 Please create the S3 bucket manually or check your AWS permissions')
+                }
+            } else if (error.name === 'Forbidden') {
+                console.error('❌ Access denied to S3 bucket. Check your AWS credentials and IAM permissions')
+            } else {
+                console.error(`❌ S3 connection error: ${error.name} - ${error.message}`)
+                console.log('💡 Common issues: Wrong region, invalid credentials, or bucket in different region')
+            }
         }
         
         console.log('🚀 Backend server ready for development!')

@@ -1,13 +1,27 @@
-import { EMBEDDING_MODELID, PINECONE_INDEX_NAME } from '../config/env'
-import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
+import { AZURE_EMBEDDING_DEPLOYMENT_NAME, PINECONE_INDEX_NAME, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY } from '../config/env'
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
-import bedrockClient from "../providers/bedrock.connect"
 import pineconeService from "../providers/pinecone.connect"
 import documentService from "./document.service"
 import path from 'path'
 import PDFParser from 'pdf2json'
 import mammoth from 'mammoth'
 import axios from 'axios'
+import OpenAI from 'openai'
+
+// OpenAI client - will be initialized only when needed
+let openaiClient: OpenAI | null = null
+
+function getOpenAIClient(): OpenAI {
+    if (!openaiClient) {
+        if (!process.env.OPENAI_API_KEY) {
+            throw new Error('OPENAI_API_KEY not found in environment variables')
+        }
+        openaiClient = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY
+        })
+    }
+    return openaiClient
+}
 
 interface PineconeVector {
     id: string
@@ -32,8 +46,8 @@ export class EmbeddingService {
     }
 
     // Process file
-    async processFileDirect(fileName: string, cloudFrontUrl: string): Promise<void> {
-        await this.processSingleFile(fileName, cloudFrontUrl)
+    async processFileDirect(fileName: string, s3Url: string): Promise<void> {
+        await this.processSingleFile(fileName, s3Url)
     }
 
     // Process multifile
@@ -50,7 +64,7 @@ export class EmbeddingService {
     }
 
     // Process once file from S3 service
-    private async processSingleFile(fileName: string, cloudFrontUrl: string): Promise<void> {
+    private async processSingleFile(fileName: string, s3Url: string): Promise<void> {
         try {
             // Create document metadata in DynamoDB
             await documentService.createDocument({
@@ -58,10 +72,10 @@ export class EmbeddingService {
                 fileSize: 0, // Will be updated after processing
                 fileType: path.extname(fileName).toLowerCase(),
                 s3Key: fileName,
-                s3Url: cloudFrontUrl
+                s3Url: s3Url
             })
 
-            const content = await this.extractFromCloudFront(cloudFrontUrl)
+            const content = await this.extractFromS3(s3Url)
             const chunks = await this.chunkContent(content)
 
             // Update document with total chunks
@@ -70,6 +84,12 @@ export class EmbeddingService {
             const vectors: PineconeVector[] = []
             
             for (let i = 0; i < chunks.length; i++) {
+                // Add small delay between embedding calls to avoid throttling
+                if (i > 0) {
+                    const delay = 100 + Math.random() * 200 // 100-300ms random delay
+                    await new Promise(resolve => setTimeout(resolve, delay))
+                }
+                
                 const embedding = await this.generateEmbedding(chunks[i])
                 const vectorId = `${fileName}_chunk_${i}`
                 
@@ -109,9 +129,9 @@ export class EmbeddingService {
     }
 
     // Get data from S3 
-    private async extractFromCloudFront(url: string): Promise<string> {
+    private async extractFromS3(url: string): Promise<string> {
         try {
-            console.log(`📄 Extracting content from: ${url}`)
+            console.log(`📄 Extracting content from S3: ${url}`)
             const response = await axios.get(url, { responseType: 'arraybuffer' })
             const buffer = Buffer.from(response.data as ArrayBuffer)
             const fileExtension = path.extname(url).toLowerCase()
@@ -173,24 +193,104 @@ export class EmbeddingService {
         return await splitter.splitText(content)
     }
 
-    // Generate Embedding with amazon bedrock
+    // Generate Embedding with Azure AI Foundry (with OpenAI fallback)
     async generateEmbedding(text: string): Promise<number[]> {
-        try {
-            console.log(`🔄 Generating embedding for text chunk (${text.length} characters)`)
-            const command = new InvokeModelCommand({
-                modelId: EMBEDDING_MODELID,
-                body: JSON.stringify({ inputText: text }),
-                contentType: 'application/json'
-            })
-
-            const res = await bedrockClient.send(command)
-            const data = JSON.parse(new TextDecoder().decode(res.body))
-            console.log(`✅ Generated embedding with ${data.embedding?.length || 0} dimensions`)
-            return data.embedding
-        } catch (error) {
-            console.error(`❌ Error generating embedding:`, error)
-            throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : error}`)
+        const maxRetries = 3
+        
+        // Try Azure first, then OpenAI fallback
+        for (let useAzure of [true, false]) {
+            if (!useAzure && !process.env.OPENAI_API_KEY) {
+                console.log('⚠️  No OpenAI API key found, skipping OpenAI fallback')
+                continue
+            }
+            
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const source = useAzure ? 'Azure AI' : 'OpenAI Direct'
+                    console.log(`🔄 Generating embedding via ${source} (${text.length} chars) - Attempt ${attempt}/${maxRetries}`)
+                    
+                    let embedding: number[]
+                    
+                    if (useAzure) {
+                        // Try Azure AI Foundry
+                        if (!AZURE_EMBEDDING_DEPLOYMENT_NAME) {
+                            throw new Error('AZURE_EMBEDDING_DEPLOYMENT_NAME not configured')
+                        }
+                        embedding = await this.generateAzureEmbedding(text)
+                    } else {
+                        // Fallback to OpenAI Direct
+                        embedding = await this.generateOpenAIEmbedding(text)
+                    }
+                    
+                    console.log(`✅ Generated embedding via ${source} with ${embedding?.length || 0} dimensions`)
+                    return embedding
+                } catch (error: any) {
+                    console.error(`❌ Error generating embedding via ${useAzure ? 'Azure' : 'OpenAI'} (attempt ${attempt}/${maxRetries}):`, error.message)
+                    
+                    // If it's a 404 (deployment not found), don't retry Azure
+                    if (useAzure && (error?.status === 404 || error?.response?.status === 404)) {
+                        console.log('🔄 Azure deployment not found, trying OpenAI fallback...')
+                        break // Break out of retry loop for Azure, try OpenAI
+                    }
+                    
+                    // Check if it's a throttling error  
+                    const isThrottling = error?.status === 429 ||
+                                       error?.code === 'TooManyRequests' ||
+                                       error?.message?.includes('rate limit') ||
+                                       error?.message?.includes('Too many requests')
+                    
+                    if (isThrottling && attempt < maxRetries) {
+                        // Exponential backoff with jitter
+                        const delay = 1000 * Math.pow(2, attempt - 1) + Math.random() * 1000
+                        console.log(`⏳ Rate limiting detected. Waiting ${Math.round(delay)}ms before retry ${attempt + 1}/${maxRetries}`)
+                        await new Promise(resolve => setTimeout(resolve, delay))
+                        continue
+                    }
+                    
+                    // If max retries reached for this service, continue to next service
+                    if (attempt === maxRetries) {
+                        console.error(`💥 Max retries reached for ${useAzure ? 'Azure' : 'OpenAI'}. Moving to next option.`)
+                        break
+                    }
+                }
+            }
         }
+        
+        throw new Error('❌ All embedding services failed. Please check your Azure deployment or OpenAI API key.')
+    }
+    
+    // Azure AI embedding method
+    private async generateAzureEmbedding(text: string): Promise<number[]> {
+        const url = `${AZURE_OPENAI_ENDPOINT}openai/deployments/${AZURE_EMBEDDING_DEPLOYMENT_NAME}/embeddings?api-version=2024-06-01`
+        const response: any = await axios.post(url, {
+            input: text,
+        }, {
+            headers: {
+                'Content-Type': 'application/json',
+                'api-key': AZURE_OPENAI_API_KEY
+            }
+        })
+        
+        if (!response?.data?.data || !Array.isArray(response.data.data) || response.data.data.length === 0) {
+            throw new Error('No embedding data returned from Azure AI')
+        }
+
+        return response.data.data[0].embedding
+    }
+    
+    // OpenAI direct embedding method 
+    private async generateOpenAIEmbedding(text: string): Promise<number[]> {
+        const client = getOpenAIClient() // This will create client only when needed
+        const response = await client.embeddings.create({
+            model: 'text-embedding-3-small',
+            input: text,
+        })
+        
+        if (!response?.data || response.data.length === 0) {
+            throw new Error('No embedding data returned from OpenAI')
+        }
+
+        return response.data[0].embedding
     }
 
     // Upsert vectors to Pinecone

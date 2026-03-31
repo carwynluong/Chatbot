@@ -153,7 +153,7 @@ export default function Sidebar() {
               <div className="flex items-center gap-3 px-2 py-2">
                 <UserCircleIcon className="w-6 h-6" />
                 <div>
-                  <p className="text-sm font-medium">{user.username}</p>
+                  <p className="text-sm font-medium">{user.name}</p>
                   <p className="text-xs text-gray-400">{user.email}</p>
                 </div>
               </div>

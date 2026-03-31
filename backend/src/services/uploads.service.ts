@@ -1,7 +1,7 @@
 import { ListObjectsCommand, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import s3Client from "../providers/s3.connect"
-import { S3_BUCKET_NAME, CLOUDFRONT_URL } from "../config/env"
+import { S3_BUCKET_NAME, AWS_REGION } from "../config/env"
 
 
 export class S3Service {
@@ -74,15 +74,9 @@ export class S3Service {
         }
     }
     
-    getCloudFrontUrl(key: string): string {
-        // For now, use pre-signed URL instead of CloudFront
-        // TODO: Setup CloudFront distribution and update this method
-        console.warn('⚠️  Using S3 direct URL instead of CloudFront - consider setting up CloudFront for better performance')
-        return this.getS3Url(key)
-    }
-    
     getS3Url(key: string): string {
-        return `https://${S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`
+        const region = AWS_REGION || 'us-east-1'
+        return `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${key}`
     }
 }
 
