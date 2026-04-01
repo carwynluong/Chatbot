@@ -120,7 +120,7 @@ ${context}
             const stream = await azureClient.chat.completions.create({
                 model: AZURE_LLM_DEPLOYMENT_NAME!,
                 messages: messages,
-                max_tokens: parseInt(MAX_TOKEN!) || 4000,
+                max_completion_tokens: parseInt(MAX_TOKEN!) || 4000,
                 temperature: parseFloat(TEMPERATURE!) || 0.7,
                 top_p: parseFloat(TOP_P!) || 0.9,
                 stream: true
