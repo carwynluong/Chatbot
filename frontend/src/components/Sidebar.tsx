@@ -10,7 +10,8 @@ import {
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
   Bars3Icon,
-  XMarkIcon
+  XMarkIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline'
 
 interface ChatSession {
@@ -39,12 +40,13 @@ export default function Sidebar() {
     try {
       const response = await ChatAPI.getChatHistory(user.id)
       if (response.history) {
-        const sessions = response.history.map((session: any, index: number) => ({
-          id: session.sessionId || `session-${index}`,
-          title: session.messages?.[0]?.content?.substring(0, 30) + '...' || `Chat ${index + 1}`,
-          timestamp: session.timestamp,
-          messageCount: session.messages?.length || 0
-        }))
+        const sessions = response.history
+          .map((session: any, index: number) => ({
+            id: session.sessionId || `session-${index}`,
+            title: session.messages?.[0]?.content?.substring(0, 30) + '...' || `Chat ${index + 1}`,
+            timestamp: session.timestamp,
+            messageCount: session.messages?.length || 0
+          }))
         setChatSessions(sessions)
       }
     } catch (error) {
@@ -60,6 +62,40 @@ export default function Sidebar() {
 
   const selectChatSession = (sessionId: string) => {
     navigate(`/?chat=${sessionId}`)
+  }
+
+  const deleteChatSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation() // Ngăn việc select chat khi click delete
+    
+    if (!user?.id) {
+      console.log('No user ID found')
+      return
+    }
+    
+    if (confirm('Bạn có chắc chắn muốn xóa cuộc trò chuyện này?')) {
+      console.log('Deleting session:', sessionId, 'for user:', user.id)
+      
+      try {
+        const response = await ChatAPI.deleteChatSession(user.id, sessionId)
+        console.log('Delete response:', response)
+        
+        // Force reload chat sessions
+        console.log('Reloading chat sessions...')
+        await loadChatSessions()
+        
+        // Nếu đang ở chat bị xóa, chuyển về trang chủ
+        if (currentChatId === sessionId) {
+          console.log('Navigating away from deleted session')
+          navigate('/')
+        }
+        
+        console.log('Chat session deleted successfully')
+        
+      } catch (error) {
+        console.error('Failed to delete chat session:', error)
+        alert('Có lỗi xảy ra khi xóa cuộc trò chuyện. Vui lòng thử lại.')
+      }
+    }
   }
 
   const handleLogout = () => {
@@ -128,6 +164,13 @@ export default function Sidebar() {
                   <p className="text-sm truncate">{session.title}</p>
                   <p className="text-xs text-gray-400">{session.messageCount} tin nhắn</p>
                 </div>
+                <button
+                  onClick={(e) => deleteChatSession(session.id, e)}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600 rounded transition-all"
+                  title="Xóa cuộc trò chuyện"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                </button>
               </div>
             ))}
             {chatSessions.length === 0 && (

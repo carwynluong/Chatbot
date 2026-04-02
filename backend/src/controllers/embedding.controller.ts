@@ -1,58 +1,56 @@
 import { Request, Response } from 'express'
 import statusCodes from '../constants/statusCodes'
+import embeddingService from '../services/embedding.service'
+import s3Service from '../services/uploads.service'
 
 export const processFileEmbedding = async (req: Request, res: Response) => {
     try {
-        console.log('🧪 Embedding endpoint called - using working credentials')
+        console.log('🚀 Processing file embeddings...')
+        console.log('📦 Embedding service:', typeof embeddingService)
+        console.log('📦 S3 service:', typeof s3Service)
         
-        const { Pinecone } = require('@pinecone-database/pinecone')
+        const { fileKeys } = req.body
         
-        // Use working API key directly for now
-        const pinecone = new Pinecone({
-            apiKey: 'pcsk_48gGSh_4ym69DQqNK4s9ruvq2Ekm9y8P3HGphgSqcywuc8KVfuNfq7MQ3YB47nu3RHX4Hg'
+        console.log('📂 Received fileKeys:', fileKeys)
+        
+        if (!fileKeys || !Array.isArray(fileKeys) || fileKeys.length === 0) {
+            console.log('❌ Invalid fileKeys')
+            return res.status(statusCodes.BAD_REQUEST).json({
+                success: false,
+                message: 'fileKeys array is required'
+            })
+        }
+        
+        // Convert file keys to URLs
+        console.log('🔗 Converting file keys to URLs...')
+        const fileUrls = fileKeys.map(key => {
+            const url = s3Service.getS3Url(key)
+            console.log(`  ${key} -> ${url}`)
+            return { key: key, url: url }
         })
         
-        const index = pinecone.index('first-project')
-        const stats = await index.describeIndexStats()
+        console.log(`📂 Processing ${fileUrls.length} files:`)
+        fileUrls.forEach(f => console.log(`  - ${f.key}`))
         
-        // Create test vector  
-        const mockVector = Array.from({length: 1536}, () => Math.random() - 0.5)
-        const vectorId = 'embedding-api-' + Date.now()
+        // Process files through embedding service
+        console.log('🔄 Calling embedding service...')
+        await embeddingService.processMultipleFilesDirect(fileUrls)
+        console.log('✅ Embedding service completed')
         
-        await index.upsert([{
-            id: vectorId,
-            values: mockVector,
-            metadata: {
-                content: 'Test embedding from API',
-                fileName: req.body.fileKey || 'test-file.txt',
-                timestamp: new Date().toISOString(),
-                source: 'embedding-controller'
-            }
-        }])
-        
-        console.log('✅ Embedding stored successfully:', vectorId)
-        
-        // Clean up after 10 seconds
-        setTimeout(() => {
-            index.deleteOne(vectorId).catch(console.error)
-        }, 10000)
+        console.log('✅ All files processed successfully')
         
         res.status(statusCodes.OK).json({
             success: true,
-            message: 'Embedding test successful! Pinecone is working!',
-            vectorId,
-            stats: {
-                dimension: stats.dimension,
-                totalVectors: stats.totalVectorCount || 0
-            },
+            message: `Successfully processed ${fileUrls.length} files`,
+            filesProcessed: fileKeys,
             timestamp: new Date()
         })
         
     } catch (error) {
-        console.error('❌ Embedding error:', error)
+        console.error('❌ Embedding processing error:', error)
         res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
             success: false,
-            message: 'Embedding failed',
+            message: 'Failed to process embeddings',
             error: (error as Error).message
         })
     }
@@ -62,7 +60,7 @@ export const initializePinecone = async (req: Request, res: Response) => {
     try {
         const { Pinecone } = require('@pinecone-database/pinecone')
         const pinecone = new Pinecone({
-            apiKey: 'pcsk_48gGSh_4ym69DQqNK4s9ruvq2Ekm9y8P3HGphgSqcywuc8KVfuNfq7MQ3YB47nu3RHX4Hg'
+            apiKey: process.env.PINECONE_API_KEY
         })
         
         const indexes = await pinecone.listIndexes()
@@ -79,6 +77,83 @@ export const initializePinecone = async (req: Request, res: Response) => {
             success: false,
             message: 'Pinecone connection failed',
             error: (error as Error).message
+        })
+    }
+}
+
+export const getDocuments = async (req: Request, res: Response) => {
+    try {
+        console.log('📊 Getting all documents from database...')
+        const documents = await documentService.getAllDocuments()
+        
+        res.status(statusCodes.OK).json({
+            success: true,
+            documents: documents,
+            count: documents.length
+        })
+    } catch (error) {
+        console.error('❌ Error getting documents:', error)
+        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
+            success: false,
+            message: 'Failed to get documents'
+        })
+    }
+}
+
+export const testEmbedding = async (req: Request, res: Response) => {
+    try {
+        const { text } = req.body
+        console.log(`🧠 Testing embedding generation for: "${text?.substring(0, 50)}..."`)
+        
+        if (!text) {
+            return res.status(statusCodes.BAD_REQUEST).json({
+                success: false,
+                message: 'text is required'
+            })
+        }
+
+        const embedding = await embeddingService.generateEmbedding(text)
+        console.log(`✅ Generated embedding: ${embedding.length} dimensions`)
+        
+        res.status(statusCodes.OK).json({
+            success: true,
+            embedding: embedding,
+            dimensions: embedding.length
+        })
+    } catch (error) {
+        console.error('❌ Error generating embedding:', error)
+        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
+            success: false,
+            message: 'Failed to generate embedding'
+        })
+    }
+}
+
+export const queryPinecone = async (req: Request, res: Response) => {
+    try {
+        const { embedding, topK = 5 } = req.body
+        console.log(`🎯 Testing Pinecone query with ${embedding?.length} dimensional vector, topK: ${topK}`)
+        
+        if (!embedding || !Array.isArray(embedding)) {
+            return res.status(statusCodes.BAD_REQUEST).json({
+                success: false,
+                message: 'embedding array is required'
+            })
+        }
+
+        const matches = await embeddingService.querySimilarDocuments(embedding, topK)
+        console.log(`🔍 Found ${matches.length} similar documents`)
+        
+        res.status(statusCodes.OK).json({
+            success: true,
+            matches: matches,
+            count: matches.length
+        })
+    } catch (error) {
+        console.error('❌ Error querying Pinecone:', error)
+        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
+            success: false,
+            message: 'Failed to query Pinecone'
         })
     }
 }

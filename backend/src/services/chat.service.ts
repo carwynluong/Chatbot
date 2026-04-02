@@ -6,7 +6,7 @@ import {
 import azureClient from "../providers/azure-ai.connect"
 import { ChatMessage, ChatSession } from "../models/chat.model"
 import { dynamoClient } from "../providers/dynamodb.connect"
-import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
+import { PutCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb"
 
 export class ChatService {
     async *queryWithContext(question: string): AsyncIterable<string> {
@@ -20,6 +20,9 @@ export class ChatService {
             if (similarChunks.length > 0) {
                 console.log(`✅ Found ${similarChunks.length} relevant document chunks`)
                 const context = similarChunks.map(chunk => chunk.metadata?.content || '').join('\n\n')
+                console.log(`📝 Built context with ${context.length} characters`)
+                console.log(`📄 Context preview: "${context.substring(0, 200)}..."`)
+                
                 const prompt = this.buildPrompt(question, context)
                 yield* this.invokeGPTStream(prompt)
             } else {
@@ -35,14 +38,40 @@ export class ChatService {
         }
     }
 
-    async saveChatSession(userId: string, messages: ChatMessage[]): Promise<void> {
-        const timestamp = Date.now()
+    async saveChatSession(userId: string, messages: ChatMessage[], sessionId?: string): Promise<void> {
         const now = new Date().toISOString()
+        
+        if (sessionId) {
+            // Tìm session hiện tại để update
+            const existingSession = await this.findSessionBySessionId(userId, sessionId)
+            
+            if (existingSession) {
+                // Update session hiện tại
+                const command = {
+                    TableName: CHAT_TABLE_NAME,
+                    Item: {
+                        userId,
+                        timestamp: existingSession.timestamp, // Giữ nguyên timestamp cũ
+                        sessionId,
+                        messages,
+                        createdAt: existingSession.createdAt,
+                        updatedAt: now
+                    }
+                }
+                await dynamoClient.send(new PutCommand(command))
+                return
+            }
+        }
+        
+        // Tạo session mới
+        const timestamp = Date.now()
+        const newSessionId = sessionId || `session-${timestamp}`
         const command = {
             TableName: CHAT_TABLE_NAME,
             Item: {
                 userId,
                 timestamp,
+                sessionId: newSessionId,
                 messages,
                 createdAt: now,
                 updatedAt: now
@@ -51,33 +80,92 @@ export class ChatService {
         await dynamoClient.send(new PutCommand(command))
     }
 
+    private async findSessionBySessionId(userId: string, sessionId: string): Promise<ChatSession | null> {
+        try {
+            const command = {
+                TableName: CHAT_TABLE_NAME,
+                KeyConditionExpression: 'userId = :userId',
+                FilterExpression: 'sessionId = :sessionId',
+                ExpressionAttributeValues: {
+                    ':userId': userId,
+                    ':sessionId': sessionId
+                }
+            }
+            const result = await dynamoClient.send(new QueryCommand(command))
+            return result.Items && result.Items.length > 0 ? result.Items[0] as ChatSession : null
+        } catch (error) {
+            console.error('Error finding session:', error)
+            return null
+        }
+    }
+
     async getChatHistory(userId: string): Promise<ChatSession[]> {
         const command = {
             TableName: CHAT_TABLE_NAME,
             KeyConditionExpression: 'userId = :userId',
             ExpressionAttributeValues: {
                 ':userId': userId
-            }
+            },
+            ScanIndexForward: false  // Sort descending by timestamp (newest first)
         }
         const result = await dynamoClient.send(new QueryCommand(command))
-        // console.log('Get message', result.Items)
         return result.Items as ChatSession[] || []
+    }
+
+    async deleteChatSession(userId: string, sessionId: string): Promise<void> {
+        try {
+            console.log('Service: Finding session to delete for user:', userId, 'session:', sessionId)
+            
+            // Tìm session cần xóa
+            const sessionToDelete = await this.findSessionBySessionId(userId, sessionId)
+            
+            if (sessionToDelete) {
+                console.log('Service: Session found, deleting...', { 
+                    userId, 
+                    sessionId, 
+                    timestamp: sessionToDelete.timestamp 
+                })
+                
+                const command = {
+                    TableName: CHAT_TABLE_NAME,
+                    Key: {
+                        userId: userId,
+                        timestamp: sessionToDelete.timestamp
+                    }
+                }
+                await dynamoClient.send(new DeleteCommand(command))
+                console.log('Service: Session deleted successfully')
+            } else {
+                console.log('Service: Session not found to delete')
+            }
+        } catch (error) {
+            console.error('Error deleting chat session:', error)
+            throw error
+        }
     }
 
     private async findSimilarChunks(queryEmbedding: number[]) {
         try {
+            console.log(`🔍 Finding similar chunks, embedding dimensions: ${queryEmbedding.length}`)
+            
             // Use the embedding service to query Pinecone
             const similarDocuments = await embeddingService.querySimilarDocuments(
                 queryEmbedding, 
                 5  // Top 5 similar chunks
             )
             
-            return similarDocuments.map(match => ({
+            console.log(`📚 Found ${similarDocuments.length} similar documents`)
+            
+            const results = similarDocuments.map(match => ({
                 score: match.score,
                 metadata: match.metadata
             }))
+            
+            console.log(`🎯 Returning ${results.length} processed results`)
+            return results
+            
         } catch (error) {
-            console.error('Error finding similar chunks:', error)
+            console.error('❌ Error finding similar chunks:', error)
             return [] // Return empty array if query fails
         }
     }

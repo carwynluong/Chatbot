@@ -43,10 +43,10 @@ export class ChatController {
 
     async saveChat(req: Request, res: Response) {
         try {
-            const { messages } = req.body
+            const { messages, sessionId } = req.body
             const userId = (req as any).user?.id
 
-            await chatService.saveChatSession(userId, messages)
+            await chatService.saveChatSession(userId, messages, sessionId)
             res.status(statusCodes.OK).json({
                 message: 'Chat saved successfully'
             })
@@ -67,6 +67,25 @@ export class ChatController {
             })
         } catch (error) {
             res.status(500).json({ error: 'Failed to get chat history' })
+        }
+    }
+
+    async deleteChat(req: Request, res: Response) {
+        try {
+            const { userId, sessionId } = req.params
+            console.log('API: Deleting chat for user:', userId, 'session:', sessionId)
+            
+            await chatService.deleteChatSession(userId, sessionId)
+            
+            console.log('API: Chat deleted successfully for user:', userId, 'session:', sessionId)
+            res.status(statusCodes.OK).json({
+                message: 'Chat deleted successfully'
+            })
+        } catch (error) {
+            console.error('Error in deleteChat:', error)
+            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
+                error: 'Failed to delete chat'
+            })
         }
     }
 }

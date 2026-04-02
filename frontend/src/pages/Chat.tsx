@@ -21,7 +21,9 @@ export default function ChatInterface() {
         // If it's a new chat, start with empty messages
         if (isNewChat) {
             setMessages([])
-            setCurrentChatId(chatId)
+            // Generate new sessionId for new chat
+            const newSessionId = `session-${Date.now()}`
+            setCurrentChatId(newSessionId)
             return
         }
         
@@ -53,7 +55,7 @@ export default function ChatInterface() {
                 setMessages([])
                 setCurrentChatId(chatId)
             })
-        } else if (!chatId) {
+        } else if (!chatId && !currentChatId) {
             // No specific chat ID, load latest session (default behavior)
             ChatAPI.getChatHistory(user.id).then((response) => {
                 if (response.history && response.history.length > 0) {
@@ -66,10 +68,17 @@ export default function ChatInterface() {
                         timestamp: new Date(msg.timestamp)
                     }))
                     setMessages(messagesWithDate)
-                    setCurrentChatId(latestSession.sessionId || 'default')
+                    setCurrentChatId(latestSession.sessionId || `session-${latestSession.timestamp}`)
+                } else {
+                    // No history found, start fresh with new session
+                    setMessages([])
+                    const newSessionId = `session-${Date.now()}`
+                    setCurrentChatId(newSessionId)
                 }
             }).catch(() => {
                 setMessages([])
+                const newSessionId = `session-${Date.now()}`
+                setCurrentChatId(newSessionId)
             })
         }
     }, [user, chatId, isNewChat, currentChatId])
@@ -103,8 +112,14 @@ export default function ChatInterface() {
             setMessages(finalMessages)
 
             if (user?.id) {
-                // Save with current chat ID as session identifier
-                ChatAPI.saveChatHistory(user.id, finalMessages)
+                // Generate sessionId nếu chưa có (new chat)
+                let sessionId = currentChatId
+                if (!sessionId) {
+                    sessionId = `session-${Date.now()}`
+                    setCurrentChatId(sessionId)
+                }
+                // Save với sessionId để maintain cùng 1 session
+                ChatAPI.saveChatHistory(user.id, finalMessages, sessionId)
             }
         } catch (error) {
             console.log('Chat error:', error)

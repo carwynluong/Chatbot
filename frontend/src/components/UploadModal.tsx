@@ -101,30 +101,59 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
       return
     }
 
+    console.log('🚀 Starting embedding process for files:', selectedFiles)
     setIsEmbedding(true)
+    
+    // Show loading toast
+    const loadingToast = toast.loading(
+      `Đang tạo embedding cho ${selectedFiles.length} file(s)... Vui lòng đợi!`
+    )
     
     try {
       // Use batch processing for multiple files for better performance
       if (selectedFiles.length > 1) {
-        await ApiEmbeddingAI.processFiles(selectedFiles)
+        console.log('📦 Processing multiple files:', selectedFiles)
+        const result = await ApiEmbeddingAI.processFiles(selectedFiles)
+        console.log('✅ Batch embedding result:', result)
+        
         selectedFiles.forEach(fileKey => {
           setEmbeddedFiles(prev => new Set([...prev, fileKey]))
         })
-        toast.success(`Tạo embedding cho ${selectedFiles.length} files thành công`)
+        
+        toast.dismiss(loadingToast)
+        toast.success(`✅ Tạo embedding cho ${selectedFiles.length} files thành công!`)
       } else {
         // Single file processing
         const fileKey = selectedFiles[0]
-        await ApiEmbeddingAI.createEmbedding(fileKey)
+        console.log('📄 Processing single file:', fileKey)
+        
+        const result = await ApiEmbeddingAI.createEmbedding(fileKey)
+        console.log('✅ Single embedding result:', result)
+        
         setEmbeddedFiles(prev => new Set([...prev, fileKey]))
-        toast.success(`Tạo embedding cho ${fileKey} thành công`)
+        
+        toast.dismiss(loadingToast)
+        toast.success(`✅ Tạo embedding cho "${fileKey}" thành công!`)
       }
       
+      console.log('🔄 Reloading file list...')
       setSelectedFiles([])
       await loadFiles()
+      console.log('✅ File list reloaded')
+      
     } catch (error) {
-      console.error('Embedding error:', error)
+      console.error('❌ Embedding error:', {
+        error: error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        selectedFiles: selectedFiles
+      })
+      
+      toast.dismiss(loadingToast)
+      toast.error(`❌ Lỗi khi tạo embedding: ${error instanceof Error ? error.message : 'Vui lòng thử lại!'}`)
+      
     } finally {
       setIsEmbedding(false)
+      console.log('🏁 Embedding process completed')
     }
   }
 
@@ -250,9 +279,15 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
                     <button
                       onClick={createEmbeddings}
                       disabled={isEmbedding}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                      {isEmbedding ? 'Đang xử lý...' : `Tạo Embedding (${selectedFiles.length})`}
+                      {isEmbedding && (
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      )}
+                      {isEmbedding ? '🔄 Đang xử lý...' : `🧠 Tạo Embedding (${selectedFiles.length})`}
                     </button>
                     <button
                       onClick={deleteFiles}

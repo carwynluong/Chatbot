@@ -66,7 +66,19 @@ export class EmbeddingService {
     // Process once file from S3 service
     private async processSingleFile(fileName: string, s3Url: string): Promise<void> {
         try {
+            console.log(`🚀 Processing single file: ${fileName}`, { s3Url })
+            
+            // First, delete any existing embeddings for this document  
+            console.log(`🧹 Cleaning up existing embeddings for: ${fileName}`)
+            try {
+                await this.deleteDocumentEmbeddings(fileName)
+                console.log(`✅ Cleaned up existing embeddings for: ${fileName}`)
+            } catch (cleanupError) {
+                console.log(`ℹ️  No existing embeddings to cleanup for: ${fileName}`)
+            }
+            
             // Create document metadata in DynamoDB
+            console.log(`📝 Creating document metadata for: ${fileName}`)
             await documentService.createDocument({
                 fileName: fileName,
                 fileSize: 0, // Will be updated after processing
@@ -74,16 +86,26 @@ export class EmbeddingService {
                 s3Key: fileName,
                 s3Url: s3Url
             })
+            console.log(`✅ Document metadata created for: ${fileName}`)
 
+            console.log(`📖 Extracting content from S3 for: ${fileName}`)
             const content = await this.extractFromS3(s3Url)
+            console.log(`📝 Extracted content length: ${content.length} characters`)
+            
+            console.log(`✂️ Chunking content for: ${fileName}`)
             const chunks = await this.chunkContent(content)
+            console.log(`📊 Created ${chunks.length} chunks`)
 
             // Update document with total chunks
+            console.log(`🔄 Updating document status to processing with ${chunks.length} chunks`)
             await documentService.updateDocumentStatus(fileName, 'processing', chunks.length)
 
             const vectors: PineconeVector[] = []
             
+            console.log(`🔢 Starting embedding generation for ${chunks.length} chunks`)
             for (let i = 0; i < chunks.length; i++) {
+                console.log(`📍 Processing chunk ${i + 1}/${chunks.length} (${chunks[i].length} chars)`)
+                
                 // Add small delay between embedding calls to avoid throttling
                 if (i > 0) {
                     const delay = 100 + Math.random() * 200 // 100-300ms random delay
@@ -91,6 +113,8 @@ export class EmbeddingService {
                 }
                 
                 const embedding = await this.generateEmbedding(chunks[i])
+                console.log(`✅ Generated embedding for chunk ${i + 1}: ${embedding.length} dimensions`)
+                
                 const vectorId = `${fileName}_chunk_${i}`
                 
                 vectors.push({
@@ -107,7 +131,23 @@ export class EmbeddingService {
             }
 
             // Upsert vectors to Pinecone in batches
+            console.log(`📤 Upserting ${vectors.length} vectors to Pinecone index: ${PINECONE_INDEX_NAME}`)
             await this.upsertVectorsToPinecone(vectors)
+            console.log(`✅ Successfully upserted ${vectors.length} vectors to Pinecone`)
+
+            // Verify upsert by querying one vector back
+            try {
+                const testVector = vectors[0]
+                const verifyQuery = await this.querySimilarDocuments(testVector.values, 1)
+                if (verifyQuery.length > 0) {
+                    console.log(`✅ Verification successful - can query back uploaded vectors`)
+                } else {
+                    console.warn(`⚠️  Verification warning - no vectors returned in test query`)
+                }
+            } catch (verifyError) {
+                console.warn(`⚠️  Could not verify upsert:`, verifyError)
+                // Don't throw here, just warn
+            }
 
             // Update document status to embedded
             await documentService.updateDocumentStatus(fileName, 'embedded', chunks.length)
@@ -307,15 +347,57 @@ export class EmbeddingService {
                 const totalBatches = Math.ceil(vectors.length / batchSize)
                 
                 console.log(`🔄 Upserting batch ${batchNumber}/${totalBatches} (${batch.length} vectors)`)
+                console.log(`🔍 Sample vector IDs in batch:`, batch.slice(0, 3).map(v => v.id))
                 
-                await index.upsert(batch)
+                // Retry mechanism for upsert
+                let retries = 3
+                let upsertSuccess = false
                 
-                console.log(`✅ Batch ${batchNumber}/${totalBatches} completed`)
+                while (retries > 0 && !upsertSuccess) {
+                    try {
+                        await index.upsert(batch)
+                        console.log(`✅ Batch ${batchNumber}/${totalBatches} upserted successfully`)
+                        upsertSuccess = true
+                    } catch (upsertError) {
+                        retries--
+                        console.error(`❌ Upsert failed for batch ${batchNumber}, retries left: ${retries}`, upsertError)
+                        
+                        if (retries > 0) {
+                            // Wait before retry
+                            await new Promise(resolve => setTimeout(resolve, 2000))
+                        } else {
+                            throw upsertError
+                        }
+                    }
+                }
             }
             
             console.log(`✅ Successfully upserted all ${vectors.length} vectors to Pinecone`)
+            
+            // CRITICAL: Verify upsert immediately 
+            console.log(`🔍 Verifying upsert by querying back...`)
+            const testVector = vectors[0]
+            const queryResponse = await index.query({
+                vector: testVector.values,
+                topK: 1,
+                includeMetadata: true,
+                filter: { documentId: { $eq: testVector.metadata.documentId } }
+            })
+            
+            if (queryResponse.matches && queryResponse.matches.length > 0) {
+                console.log(`✅ VERIFICATION SUCCESS: Found uploaded vector ${queryResponse.matches[0].id}`)
+            } else {
+                console.error(`❌ VERIFICATION FAILED: Cannot query back uploaded vectors!`)
+                throw new Error('Upsert verification failed - vectors not found in Pinecone')
+            }
+            
         } catch (error) {
-            console.error(`❌ Error upserting vectors to Pinecone:`, error)
+            console.error(`❌ Error upserting vectors to Pinecone:`, {
+                error: error,
+                message: error instanceof Error ? error.message : 'Unknown error',
+                vectorCount: vectors.length,
+                sampleVectorIds: vectors.slice(0, 3).map(v => v.id)
+            })
             throw new Error(`Failed to upsert vectors to Pinecone: ${error instanceof Error ? error.message : error}`)
         }
     }
@@ -334,7 +416,10 @@ export class EmbeddingService {
     // Query similar documents from Pinecone
     async querySimilarDocuments(queryEmbedding: number[], topK: number = 5): Promise<any[]> {
         try {
+            console.log(`🔍 Querying Pinecone for similar documents, topK: ${topK}, embedding dims: ${queryEmbedding.length}`)
+            
             const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
+            console.log(`✅ Connected to Pinecone index: ${PINECONE_INDEX_NAME}`)
             
             const queryResponse = await index.query({
                 vector: queryEmbedding,
@@ -342,10 +427,16 @@ export class EmbeddingService {
                 includeMetadata: true,
                 includeValues: false
             })
+            
+            const matches = queryResponse.matches || []
+            console.log(`🎯 Found ${matches.length} similar documents:`)
+            matches.forEach((match, idx) => {
+                console.log(`  ${idx + 1}. Score: ${match.score}, Document: ${match.metadata?.fileName}, Content: ${match.metadata?.content?.substring(0, 100)}...`)
+            })
 
-            return queryResponse.matches || []
+            return matches
         } catch (error) {
-            console.error('Error querying Pinecone:', error)
+            console.error('❌ Error querying Pinecone:', error)
             throw error
         }
     }
@@ -353,6 +444,7 @@ export class EmbeddingService {
     // Delete document embeddings from Pinecone
     async deleteDocumentEmbeddings(documentId: string): Promise<void> {
         try {
+            console.log(`🗑️  Deleting embeddings for document: ${documentId}`)
             const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
             
             // Delete by metadata filter
@@ -361,14 +453,24 @@ export class EmbeddingService {
                     documentId: { $eq: documentId }
                 }
             })
-
-            // Update document status
-            await documentService.deleteDocument(documentId)
             
             console.log(`✅ Deleted embeddings for document: ${documentId}`)
+
+            // Update document status in DynamoDB (only if exists)
+            try {
+                const existingDoc = await documentService.getDocument(documentId)
+                if (existingDoc) {
+                    await documentService.deleteDocument(documentId)
+                    console.log(`✅ Deleted document metadata: ${documentId}`)
+                }
+            } catch (dbError) {
+                console.log(`ℹ️  No document metadata to delete: ${documentId}`)
+            }
+            
         } catch (error) {
             console.error(`❌ Error deleting document embeddings: ${documentId}`, error)
-            throw error
+            // Don't throw error for cleanup operations
+            console.log(`⚠️  Continuing despite cleanup error...`)
         }
     }
 

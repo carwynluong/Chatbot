@@ -1,5 +1,11 @@
 {
-    "watch": ["src", "config"],
-    "ext": "js,json",
-    "exec": "npx ts-node src/index.ts"
+    "watch": ["src"],
+    "ext": "ts,js,json",
+    "ignore": ["*.test.*", "dist", "node_modules"],
+    "exec": "ts-node --transpile-only src/index.ts",
+    "env": {
+        "NODE_ENV": "development"
+    },
+    "delay": 500,
+    "verbose": false
 }

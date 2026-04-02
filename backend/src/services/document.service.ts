@@ -1,4 +1,4 @@
-import { PutCommand, GetCommand, UpdateCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb"
+import { PutCommand, GetCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb"
 import { dynamoClient } from "../providers/dynamodb.connect"
 import { DocumentMetadata, CreateDocumentInput } from "../models/document.model"
 import { DOCUMENT_TABLE_NAME } from "../config/env"
@@ -71,6 +71,32 @@ export class DocumentService {
         }))
 
         return result.Item as DocumentMetadata || null
+    }
+
+    async getAllDocuments(): Promise<DocumentMetadata[]> {
+        try {
+            console.log('📊 Scanning all documents from DynamoDB...')
+            console.log('📊 Table name:', DOCUMENT_TABLE_NAME)
+            
+            const result = await dynamoClient.send(new ScanCommand({
+                TableName: DOCUMENT_TABLE_NAME
+            }))
+            
+            const documents = result.Items as DocumentMetadata[] || []
+            console.log(`✅ Found ${documents.length} documents`)
+            documents.forEach((doc, idx) => {
+                console.log(`  ${idx + 1}. ${doc.fileName || doc.id} (Status: ${doc.status})`)
+            })
+            return documents
+        } catch (error) {
+            console.error('❌ Error scanning documents from DynamoDB:', {
+                error: error,
+                message: error instanceof Error ? error.message : 'Unknown error',
+                tableName: DOCUMENT_TABLE_NAME
+            })
+            // Return empty array instead of throwing
+            return []
+        }
     }
 
     async listDocuments(): Promise<DocumentMetadata[]> {

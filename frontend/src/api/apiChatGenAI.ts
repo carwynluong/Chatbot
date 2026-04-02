@@ -13,7 +13,7 @@ export class ChatAPI {
         }
     }
 
-    async saveChatHistory(userId: string, messages: Message[]): Promise<void> {
+    async saveChatHistory(userId: string, messages: Message[], sessionId?: string): Promise<void> {
         // Chuyển Date thành string
         const messagesForSave = messages.map(msg => ({
             ...msg,
@@ -21,13 +21,26 @@ export class ChatAPI {
         }))
         await axios.post('/chat/save', {
             userId,
-            messages: messagesForSave
+            messages: messagesForSave,
+            sessionId
         })
     }
 
     async getChatHistory(userId: string): Promise<ChatHistoryResponse> {
         const res = await axios.get(`/chat/history/${userId}`)
         return res.data
+    }
+
+    async deleteChatSession(userId: string, sessionId: string): Promise<void> {
+        try {
+            console.log('API: Deleting session', sessionId, 'for user', userId)
+            const response = await axios.delete(`/chat/delete/${userId}/${sessionId}`)
+            console.log('API: Delete successful', response.data)
+            return response.data
+        } catch (error) {
+            console.error('API: Delete failed', error)
+            throw error
+        }
     }
 }
 

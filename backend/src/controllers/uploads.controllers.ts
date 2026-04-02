@@ -75,9 +75,9 @@ export class S3Controller {
     async getFileUrl(req: Request, res: Response) {
         try {
             const { key } = req.params
-            const url = S3Service.getS3Url(key)
+            const url = await S3Service.getPresignedDownloadUrl(key)
             res.status(statusCodes.OK).json({
-                message: 'File URL generated successfully',
+                message: 'Presigned download URL generated successfully',
                 url
             })
         } catch (error) {

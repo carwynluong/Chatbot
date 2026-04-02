@@ -8,6 +8,7 @@ export interface ChatMessage {
 export interface ChatSession {
     userId: string
     timestamp: number
+    sessionId?: string
     messages: ChatMessage[]
     createdAt: string
     updatedAt: string

@@ -116,5 +116,30 @@ router.post('/save', requireAuth, chatController.saveChat)
 
 router.get('/history/:userId', requireAuth, chatController.getChatHistory)
 
+/**
+ * @swagger
+ * /api/v1/chat/delete/{userId}/{sessionId}:
+ *   delete:
+ *     summary: Delete chat session
+ *     tags: [Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: sessionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Chat deleted successfully
+ */
+router.delete('/delete/:userId/:sessionId', requireAuth, chatController.deleteChat)
+
 
 export default router

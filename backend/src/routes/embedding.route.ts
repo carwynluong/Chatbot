@@ -1,4 +1,4 @@
-import { processFileEmbedding, initializePinecone } from '../controllers/embedding.controller'
+import { processFileEmbedding, initializePinecone, getDocuments, testEmbedding, queryPinecone } from '../controllers/embedding.controller'
 import { requireAuth } from '../middleware/auth.middleware'
 import { Router } from 'express'
 
@@ -28,6 +28,13 @@ const router = Router()
  *         description: Files processed successfully
  */
 router.post('/process', requireAuth, processFileEmbedding)
+
+// Debug route - no auth
+router.post('/debug-process', (req, res) => {
+    console.log('🧪 Debug route called!')
+    console.log('Body:', req.body)
+    res.json({ message: 'Debug route working', body: req.body })
+})
 
 // Simple test route
 router.get('/test', (req, res) => {
@@ -81,5 +88,10 @@ router.post('/debug', (req, res) => {
         bodyKeys: Object.keys(req.body || {})
     })
 })
+
+// Debug routes for testing embedding pipeline
+router.get('/documents', getDocuments)
+router.post('/test', testEmbedding)  
+router.post('/query', queryPinecone)
 
 export default router

@@ -16,6 +16,9 @@ axiosInstance.interceptors.request.use(
         
         if (accessToken) {
             config.headers.Authorization = `Bearer ${accessToken}`
+            console.log('✅ Token attached to request:', config.method?.toUpperCase(), config.url)
+        } else {
+            console.warn('❌ No access token found for request:', config.method?.toUpperCase(), config.url)
         }
         return config
     },
