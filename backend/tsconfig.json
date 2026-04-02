@@ -23,7 +23,7 @@
     "removeComments": true,
     "exactOptionalPropertyTypes": false,
     "declaration": true,
-    "outDir": "./dist",
+    "outDir": "./dist"
   },
   "include": ["src", "src/**/*", "src/**/*.d.ts"],
   "exclude": ["backend/node_modules", "dist"]

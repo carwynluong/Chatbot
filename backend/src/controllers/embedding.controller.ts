@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import statusCodes from '../constants/statusCodes'
 import embeddingService from '../services/embedding.service'
 import s3Service from '../services/uploads.service'
+import documentService from '../services/document.service'
 
 export const processFileEmbedding = async (req: Request, res: Response) => {
     try {
@@ -86,16 +87,38 @@ export const getDocuments = async (req: Request, res: Response) => {
         console.log('📊 Getting all documents from database...')
         const documents = await documentService.getAllDocuments()
         
+        // Get detailed status for each document
+        const documentsWithDetails = documents.map(doc => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            status: doc.status,
+            totalChunks: doc.totalChunks,
+            createdAt: doc.createdAt,
+            updatedAt: doc.updatedAt,
+            errorMessage: doc.errorMessage,
+            isReady: doc.status === 'embedded' && doc.totalChunks > 0
+        }))
+        
+        const readyFiles = documentsWithDetails.filter(doc => doc.isReady).length
+        const processingFiles = documentsWithDetails.filter(doc => doc.status === 'processing').length
+        const errorFiles = documentsWithDetails.filter(doc => doc.status === 'error').length
+        
         res.status(statusCodes.OK).json({
             success: true,
-            documents: documents,
-            count: documents.length
+            documents: documentsWithDetails,
+            summary: {
+                total: documents.length,
+                ready: readyFiles,
+                processing: processingFiles,
+                error: errorFiles
+            }
         })
     } catch (error) {
         console.error('❌ Error getting documents:', error)
         res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
             success: false,
-            message: 'Failed to get documents'
+            message: 'Failed to get documents',
+            error: error instanceof Error ? error.message : 'Unknown error'
         })
     }
 }
@@ -154,6 +177,52 @@ export const queryPinecone = async (req: Request, res: Response) => {
         res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
             success: false,
             message: 'Failed to query Pinecone'
+        })
+    }
+}
+
+export const testSearch = async (req: Request, res: Response) => {
+    try {
+        const { question } = req.body
+        console.log(`🔍 Testing search for question: "${question}"`)
+        
+        if (!question) {
+            return res.status(statusCodes.BAD_REQUEST).json({
+                success: false,
+                message: 'question is required'
+            })
+        }
+
+        // Generate embedding for the question
+        const questionEmbedding = await embeddingService.generateEmbedding(question)
+        console.log(`🧠 Generated question embedding: ${questionEmbedding.length} dimensions`)
+        
+        // Search for similar chunks
+        const matches = await embeddingService.querySimilarDocuments(questionEmbedding, 5)
+        console.log(`📚 Found ${matches.length} relevant chunks`)
+        
+        const resultsWithContent = matches.map((match, index) => ({
+            rank: index + 1,
+            score: match.score,
+            documentId: match.metadata?.documentId,
+            fileName: match.metadata?.fileName,
+            chunkIndex: match.metadata?.chunkIndex,
+            content: match.metadata?.content || 'No content available',
+            contentPreview: (match.metadata?.content || '').substring(0, 200) + '...'
+        }))
+        
+        res.status(statusCodes.OK).json({
+            success: true,
+            question: question,
+            totalMatches: matches.length,
+            results: resultsWithContent
+        })
+    } catch (error) {
+        console.error('❌ Error testing search:', error)
+        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
+            success: false,
+            message: 'Failed to test search',
+            error: error instanceof Error ? error.message : 'Unknown error'
         })
     }
 }

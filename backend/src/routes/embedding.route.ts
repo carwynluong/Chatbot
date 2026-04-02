@@ -1,4 +1,4 @@
-import { processFileEmbedding, initializePinecone, getDocuments, testEmbedding, queryPinecone } from '../controllers/embedding.controller'
+import { processFileEmbedding, initializePinecone, getDocuments, testEmbedding, queryPinecone, testSearch } from '../controllers/embedding.controller'
 import { requireAuth } from '../middleware/auth.middleware'
 import { Router } from 'express'
 
@@ -93,5 +93,6 @@ router.post('/debug', (req, res) => {
 router.get('/documents', getDocuments)
 router.post('/test', testEmbedding)  
 router.post('/query', queryPinecone)
+router.post('/search', testSearch)
 
 export default router

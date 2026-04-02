@@ -21,12 +21,13 @@ export class S3Service {
         }
     }
 
-    async uploadMultipleFiles(files: { key: string, body: Buffer, contentType: string }[]) {
+    async uploadMultipleFiles(files: { key: string, body: Buffer, contentType: string, originalName?: string }[]) {
         const uploadPromises = files.map(async file => {
             await this.uploadFile(file.key, file.body, file.contentType)
             return {
                 key: file.key,
-                url: this.getS3Url(file.key)
+                url: this.getS3Url(file.key),
+                originalName: file.originalName
             }
         })
         return await Promise.all(uploadPromises)

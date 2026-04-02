@@ -9,7 +9,7 @@ import axios from 'axios'
 import OpenAI from 'openai'
 
 // OpenAI client - will be initialized only when needed
-let openaiClient: OpenAI | null = null
+let openaiClient: OpenAI | null = null  
 
 function getOpenAIClient(): OpenAI {
     if (!openaiClient) {
@@ -28,10 +28,17 @@ interface PineconeVector {
     values: number[]
     metadata: {
         documentId: string
+        sanitizedDocumentId: string
         chunkIndex: number
         content: string
         fileName: string
+        displayName: string
         fileType: string
+        contentLength: number
+        totalChunks: number
+        chunkNumber: number
+        uploadTimestamp: string
+        contentPreview: string
     }
 }
 
@@ -89,7 +96,7 @@ export class EmbeddingService {
             console.log(`✅ Document metadata created for: ${fileName}`)
 
             console.log(`📖 Extracting content from S3 for: ${fileName}`)
-            const content = await this.extractFromS3(s3Url)
+            const content = await this.extractFromS3(fileName) // Pass S3 key instead of URL
             console.log(`📝 Extracted content length: ${content.length} characters`)
             
             console.log(`✂️ Chunking content for: ${fileName}`)
@@ -115,17 +122,27 @@ export class EmbeddingService {
                 const embedding = await this.generateEmbedding(chunks[i])
                 console.log(`✅ Generated embedding for chunk ${i + 1}: ${embedding.length} dimensions`)
                 
-                const vectorId = `${fileName}_chunk_${i}`
+                // Create ASCII-only vector ID (Pinecone requirement)
+                const sanitizedFileName = Buffer.from(fileName, 'utf8').toString('base64').replace(/[^a-zA-Z0-9]/g, '')
+                const vectorId = `doc_${sanitizedFileName}_chunk_${i}`
                 
                 vectors.push({
                     id: vectorId,
                     values: embedding,
                     metadata: {
-                        documentId: fileName,
+                        documentId: fileName, // Keep original filename for search
+                        sanitizedDocumentId: sanitizedFileName, // For deletion
                         chunkIndex: i,
                         content: chunks[i],
                         fileName: fileName,
-                        fileType: path.extname(fileName).toLowerCase()
+                        displayName: fileName.split('/').pop() || fileName, // Human readable name
+                        fileType: path.extname(fileName).toLowerCase(),
+                        contentLength: chunks[i].length,
+                        totalChunks: chunks.length,
+                        chunkNumber: i + 1,
+                        uploadTimestamp: new Date().toISOString(),
+                        // Add content preview for better search relevance
+                        contentPreview: chunks[i].substring(0, 200)
                     }
                 })
             }
@@ -168,34 +185,111 @@ export class EmbeddingService {
         }
     }
 
-    // Get data from S3 
-    private async extractFromS3(url: string): Promise<string> {
+    // Get data from S3 using AWS SDK (not HTTP)
+    private async extractFromS3(s3Key: string): Promise<string> {
         try {
-            console.log(`📄 Extracting content from S3: ${url}`)
-            const response = await axios.get(url, { responseType: 'arraybuffer' })
-            const buffer = Buffer.from(response.data as ArrayBuffer)
-            const fileExtension = path.extname(url).toLowerCase()
+            console.log(`📄 Extracting content from S3 using AWS SDK: ${s3Key}`)
+            
+            // Extract the S3 key from URL if it's a full URL
+            let key = s3Key
+            if (s3Key.includes('amazonaws.com/')) {
+                key = s3Key.split('amazonaws.com/')[1]
+                console.log(`📄 Extracted S3 key: ${key}`)
+            }
+            
+            // Use S3 SDK directly instead of HTTP request
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3')
+            const s3Client = (await import('../providers/s3.connect')).default
+            
+            const command = new GetObjectCommand({
+                Bucket: process.env.S3_BUCKET_NAME,
+                Key: key
+            })
+            
+            const response = await s3Client.send(command)
+            
+            if (!response.Body) {
+                throw new Error('No content received from S3')
+            }
+            
+            // Convert stream to buffer
+            const chunks: Uint8Array[] = []
+            const reader = response.Body.transformToWebStream().getReader()
+            
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                chunks.push(value)
+            }
+            
+            const buffer = Buffer.concat(chunks)
+            const fileExtension = path.extname(key).toLowerCase()
             
             console.log(`📄 File extension: ${fileExtension}`)
             console.log(`📄 File size: ${buffer.length} bytes`)
 
             switch (fileExtension) {
                 case '.pdf':
-                    return await this.extractPdfText(buffer)
+                    const pdfContent = await this.extractPdfText(buffer)
+                    console.log(`📄 Extracted ${pdfContent.length} characters from PDF file`)
+                    if (pdfContent.length < 50) {
+                        throw new Error('PDF content extraction failed or file is empty')
+                    }
+                    return pdfContent
+                    
                 case '.docx':
-                    const result = await mammoth.extractRawText({ buffer })
-                    console.log(`📄 Extracted ${result.value.length} characters from DOCX file`)
-                    return result.value
+                    try {
+                        const result = await mammoth.extractRawText({ buffer })
+                        console.log(`📄 Extracted ${result.value.length} characters from DOCX file`)
+                        if (result.messages && result.messages.length > 0) {
+                            console.log('📄 DOCX extraction messages:', result.messages)
+                        }
+                        if (result.value.length < 10) {
+                            throw new Error('DOCX content extraction failed or file is empty')
+                        }
+                        // Clean up the extracted text
+                        const cleanedContent = result.value
+                            .replace(/\r\n/g, '\n')  // Normalize line endings
+                            .replace(/\n{3,}/g, '\n\n')  // Remove excessive line breaks
+                            .trim()
+                        console.log(`📄 Cleaned content length: ${cleanedContent.length} characters`)
+                        return cleanedContent
+                    } catch (docxError) {
+                        console.error('❌ DOCX extraction error:', docxError)
+                        throw new Error(`Failed to extract DOCX content: ${docxError instanceof Error ? docxError.message : docxError}`)
+                    }
+                    
                 case '.txt':
-                    const textContent = buffer.toString('utf-8')
-                    console.log(`📄 Extracted ${textContent.length} characters from TXT file`)
+                    // Try multiple encodings for text files
+                    let textContent = ''
+                    try {
+                        textContent = buffer.toString('utf-8')
+                        console.log(`📄 Extracted ${textContent.length} characters from TXT file (UTF-8)`)
+                    } catch {
+                        try {
+                            textContent = buffer.toString('latin1')
+                            console.log(`📄 Extracted ${textContent.length} characters from TXT file (Latin1)`)
+                        } catch {
+                            textContent = buffer.toString('ascii')
+                            console.log(`📄 Extracted ${textContent.length} characters from TXT file (ASCII)`)
+                        }
+                    }
+                    
+                    if (textContent.length < 5) {
+                        throw new Error('TXT file appears to be empty or unreadable')
+                    }
                     return textContent
+                    
                 default:
                     console.log(`⚠️  Unknown file type ${fileExtension}, treating as text`)
-                    return buffer.toString('utf-8')
+                    const defaultContent = buffer.toString('utf-8')
+                    if (defaultContent.length < 5) {
+                        throw new Error('File appears to be empty or unreadable')
+                    }
+                    return defaultContent
             }
         } catch (error) {
-            console.error(`❌ Error extracting content from ${url}:`, error)
+            console.error(`❌ Error extracting content from S3 key ${s3Key}:`, error)
             throw new Error(`Failed to extract content: ${error instanceof Error ? error.message : error}`)
         }
     }
@@ -224,13 +318,22 @@ export class EmbeddingService {
         })
     }
 
-    // Chunk content 
+    // Chunk content với overlap cao hơn để đảm bảo không mất thông tin
     private async chunkContent(content: string): Promise<string[]> {
         const splitter = new RecursiveCharacterTextSplitter({
-            chunkSize: 1000,
-            chunkOverlap: 100
+            chunkSize: 1500, // Tăng chunk size để capture nhiều context hơn
+            chunkOverlap: 200, // Tăng overlap để đảm bảo không mất thông tin giữa các chunks
+            separators: ['\n\n', '\n', '.', '!', '?', ';', ':', ' ', ''] // Ưu tiên chia theo paragraph và câu
         })
-        return await splitter.splitText(content)
+        
+        console.log(`📝 Original content length: ${content.length} characters`)
+        const chunks = await splitter.splitText(content)
+        console.log(`✂️ Split into ${chunks.length} chunks with sizes:`)
+        chunks.forEach((chunk, index) => {
+            console.log(`  Chunk ${index + 1}: ${chunk.length} chars`)
+        })
+        
+        return chunks
     }
 
     // Generate Embedding with Azure AI Foundry (with OpenAI fallback)
@@ -304,6 +407,7 @@ export class EmbeddingService {
         const url = `${AZURE_OPENAI_ENDPOINT}openai/deployments/${AZURE_EMBEDDING_DEPLOYMENT_NAME}/embeddings?api-version=2024-06-01`
         const response: any = await axios.post(url, {
             input: text,
+            dimensions: 1024 // Force 1024 dimensions to match Pinecone index
         }, {
             headers: {
                 'Content-Type': 'application/json',
@@ -315,7 +419,14 @@ export class EmbeddingService {
             throw new Error('No embedding data returned from Azure AI')
         }
 
-        return response.data.data[0].embedding
+        const embedding = response.data.data[0].embedding
+        console.log(`✅ Generated Azure embedding with ${embedding.length} dimensions`)
+        
+        if (embedding.length !== 1024) {
+            throw new Error(`Expected 1024 dimensions but got ${embedding.length} dimensions`)
+        }
+
+        return embedding
     }
     
     // OpenAI direct embedding method 
@@ -324,13 +435,21 @@ export class EmbeddingService {
         const response = await client.embeddings.create({
             model: 'text-embedding-3-small',
             input: text,
+            dimensions: 1024 // Force 1024 dimensions to match Pinecone index
         })
         
         if (!response?.data || response.data.length === 0) {
             throw new Error('No embedding data returned from OpenAI')
         }
 
-        return response.data[0].embedding
+        const embedding = response.data[0].embedding
+        console.log(`✅ Generated OpenAI embedding with ${embedding.length} dimensions`)
+        
+        if (embedding.length !== 1024) {
+            throw new Error(`Expected 1024 dimensions but got ${embedding.length} dimensions`)
+        }
+
+        return embedding
     }
 
     // Upsert vectors to Pinecone
@@ -431,7 +550,9 @@ export class EmbeddingService {
             const matches = queryResponse.matches || []
             console.log(`🎯 Found ${matches.length} similar documents:`)
             matches.forEach((match, idx) => {
-                console.log(`  ${idx + 1}. Score: ${match.score}, Document: ${match.metadata?.fileName}, Content: ${match.metadata?.content?.substring(0, 100)}...`)
+                    const content = match.metadata?.content
+                const contentPreview = typeof content === 'string' ? content.substring(0, 100) : 'No content'
+                console.log(`  ${idx + 1}. Score: ${match.score}, Document: ${match.metadata?.fileName}, Content: ${contentPreview}...`)
             })
 
             return matches
@@ -447,10 +568,16 @@ export class EmbeddingService {
             console.log(`🗑️  Deleting embeddings for document: ${documentId}`)
             const index = await pineconeService.getIndex(PINECONE_INDEX_NAME!)
             
+            // Create sanitized documentId for filter (same logic as upsert)
+            const sanitizedDocumentId = Buffer.from(documentId, 'utf8').toString('base64').replace(/[^a-zA-Z0-9]/g, '')
+            
+            console.log(`🔍 Using sanitized documentId for deletion: ${sanitizedDocumentId}`)
+            
             // Delete by metadata filter
             await index.deleteMany({
                 filter: {
-                    documentId: { $eq: documentId }
+                    documentId: { $eq: documentId }, // Keep original documentId in metadata
+                    sanitizedDocumentId: { $eq: sanitizedDocumentId } // Also filter by sanitized version
                 }
             })
             

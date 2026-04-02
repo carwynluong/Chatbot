@@ -1,6 +1,6 @@
 import { Router } from "express"
 import multer from 'multer'   
-import S3Controller from '../controllers/uploads.controllers'
+import S3Controller from '../controllers/uploads.controller'
 import { requireAuth } from '../middleware/auth.middleware'
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })

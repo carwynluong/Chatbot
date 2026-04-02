@@ -148,20 +148,37 @@ export class ChatService {
         try {
             console.log(`🔍 Finding similar chunks, embedding dimensions: ${queryEmbedding.length}`)
             
-            // Use the embedding service to query Pinecone
+            // Tăng số lượng chunks để capture nhiều thông tin hơn từ tất cả files
             const similarDocuments = await embeddingService.querySimilarDocuments(
                 queryEmbedding, 
-                5  // Top 5 similar chunks
+                10  // Tăng lên 10 chunks để có thể lấy thông tin từ nhiều files
             )
             
             console.log(`📚 Found ${similarDocuments.length} similar documents`)
+            
+            // Group by document để đảm bảo có thông tin từ nhiều files khác nhau
+            const documentGroups = new Map()
+            similarDocuments.forEach(match => {
+                const docId = match.metadata?.documentId
+                if (docId) {
+                    if (!documentGroups.has(docId)) {
+                        documentGroups.set(docId, [])
+                    }
+                    documentGroups.get(docId).push(match)
+                }
+            })
+            
+            console.log(`📁 Content found in ${documentGroups.size} different documents:`)
+            documentGroups.forEach((matches, docId) => {
+                console.log(`  - ${docId}: ${matches.length} chunks`)
+            })
             
             const results = similarDocuments.map(match => ({
                 score: match.score,
                 metadata: match.metadata
             }))
             
-            console.log(`🎯 Returning ${results.length} processed results`)
+            console.log(`🎯 Returning ${results.length} processed results from ${documentGroups.size} documents`)
             return results
             
         } catch (error) {
@@ -171,17 +188,37 @@ export class ChatService {
     }
 
     private buildPrompt(question: string, context: string): string {
-        return `Bạn là một AI assistant thông minh và hữu ích. Hãy trả lời câu hỏi dựa trên thông tin được cung cấp trong phần Context.
+        // Extract file names from context to show sources
+        const fileNames = new Set<string>()
+        const contextLines = context.split('\n\n')
+        
+        // Try to extract file info from metadata if available
+        contextLines.forEach(line => {
+            // This is a simple heuristic - in a real implementation you might pass file info separately
+            if (line.includes('uploads/')) {
+                const match = line.match(/uploads\/[^/]*\.([a-zA-Z]+)/)
+                if (match) {
+                    fileNames.add(match[0].split('/').pop() || 'unknown file')
+                }
+            }
+        })
+        
+        return `Bạn là một AI assistant thông minh và hữu ích. Hãy trả lời câu hỏi dựa trên thông tin được cung cấp trong phần Context từ các tài liệu đã upload.
 
-**Context:**
+**Context từ các tài liệu đã upload:**
 ${context}
+
+${fileNames.size > 0 ? `**Nguồn thông tin từ ${fileNames.size} file(s): ${Array.from(fileNames).join(', ')}**\n` : ''}
 
 **Câu hỏi:** ${question}
 
 **Hướng dẫn:**
-- Trả lời chính xác dựa trên thông tin trong Context
-- Nếu không có thông tin liên quan trong Context, hãy nói rõ điều đó
-- Trả lời bằng tiếng Việt một cách tự nhiên và dễ hiểu`
+- Trả lời chính xác và chi tiết dựa trên thông tin trong Context ở trên
+- Nếu thông tin trải rộng trên nhiều tài liệu, hãy tổng hợp và trình bày một cách có hệ thống
+- Có thể trích dẫn thông tin cụ thể từ context khi cần thiết  
+- Nếu thông tin trong Context không đủ để trả lời hoàn toàn, hãy nói rõ điều đó và trả lời dựa trên những gì có
+- Trả lời bằng tiếng Việt một cách tự nhiên, rõ ràng và dễ hiểu
+- Nếu câu hỏi liên quan đến danh sách, số liệu cụ thể, thông tin chi tiết từ tài liệu thì ưu tiên sử dụng chính xác thông tin từ Context`
     }
 
 
