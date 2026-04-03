@@ -11,7 +11,7 @@ import { PutCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb"
 export class ChatService {
     async *queryWithContext(question: string): AsyncIterable<string> {
         try {
-            console.log('🔍 Generating embedding for user question...')
+            // console.log('Generating embedding for user question...')
             const questionEmbedding = await embeddingService.generateEmbedding(question)
             
             console.log('📚 Searching for similar document chunks...')

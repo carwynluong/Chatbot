@@ -6,16 +6,16 @@ import documentService from '../services/document.service'
 
 export const processFileEmbedding = async (req: Request, res: Response) => {
     try {
-        console.log('🚀 Processing file embeddings...')
-        console.log('📦 Embedding service:', typeof embeddingService)
-        console.log('📦 S3 service:', typeof s3Service)
+        // console.log('Processing file embeddings...')
+        // console.log('Embedding service type:', typeof embeddingService)
+        // console.log('S3 service type:', typeof s3Service)
         
         const { fileKeys } = req.body
         
-        console.log('📂 Received fileKeys:', fileKeys)
+        // console.log('Received fileKeys:', fileKeys)
         
         if (!fileKeys || !Array.isArray(fileKeys) || fileKeys.length === 0) {
-            console.log('❌ Invalid fileKeys')
+            console.log('Invalid fileKeys')
             return res.status(statusCodes.BAD_REQUEST).json({
                 success: false,
                 message: 'fileKeys array is required'
@@ -23,22 +23,22 @@ export const processFileEmbedding = async (req: Request, res: Response) => {
         }
         
         // Convert file keys to URLs
-        console.log('🔗 Converting file keys to URLs...')
+        // console.log('Converting file keys to URLs...')
         const fileUrls = fileKeys.map(key => {
             const url = s3Service.getS3Url(key)
             console.log(`  ${key} -> ${url}`)
             return { key: key, url: url }
         })
         
-        console.log(`📂 Processing ${fileUrls.length} files:`)
-        fileUrls.forEach(f => console.log(`  - ${f.key}`))
+        // console.log(`Processing ${fileUrls.length} files:`)
+        // fileUrls.forEach(f => console.log(`  - ${f.key}`))
         
         // Process files through embedding service
-        console.log('🔄 Calling embedding service...')
+        // console.log('Calling embedding service...')
         await embeddingService.processMultipleFilesDirect(fileUrls)
-        console.log('✅ Embedding service completed')
+        // console.log('Embedding service completed')
         
-        console.log('✅ All files processed successfully')
+        console.log('Files processed successfully')
         
         res.status(statusCodes.OK).json({
             success: true,
@@ -84,7 +84,7 @@ export const initializePinecone = async (req: Request, res: Response) => {
 
 export const getDocuments = async (req: Request, res: Response) => {
     try {
-        console.log('📊 Getting all documents from database...')
+        // console.log('Getting all documents...')
         const documents = await documentService.getAllDocuments()
         
         // Get detailed status for each document
@@ -126,7 +126,7 @@ export const getDocuments = async (req: Request, res: Response) => {
 export const testEmbedding = async (req: Request, res: Response) => {
     try {
         const { text } = req.body
-        console.log(`🧠 Testing embedding generation for: "${text?.substring(0, 50)}..."`)
+        // console.log(`Testing embedding generation for: "${text?.substring(0, 50)}..."`)
         
         if (!text) {
             return res.status(statusCodes.BAD_REQUEST).json({
@@ -136,7 +136,7 @@ export const testEmbedding = async (req: Request, res: Response) => {
         }
 
         const embedding = await embeddingService.generateEmbedding(text)
-        console.log(`✅ Generated embedding: ${embedding.length} dimensions`)
+        // console.log(`Generated embedding: ${embedding.length} dimensions`)
         
         res.status(statusCodes.OK).json({
             success: true,
@@ -155,7 +155,7 @@ export const testEmbedding = async (req: Request, res: Response) => {
 export const queryPinecone = async (req: Request, res: Response) => {
     try {
         const { embedding, topK = 5 } = req.body
-        console.log(`🎯 Testing Pinecone query with ${embedding?.length} dimensional vector, topK: ${topK}`)
+        // console.log(`Testing Pinecone query with ${embedding?.length} dimensional vector, topK: ${topK}`)
         
         if (!embedding || !Array.isArray(embedding)) {
             return res.status(statusCodes.BAD_REQUEST).json({
@@ -165,7 +165,7 @@ export const queryPinecone = async (req: Request, res: Response) => {
         }
 
         const matches = await embeddingService.querySimilarDocuments(embedding, topK)
-        console.log(`🔍 Found ${matches.length} similar documents`)
+        // console.log(`Found ${matches.length} similar documents`)
         
         res.status(statusCodes.OK).json({
             success: true,
@@ -184,7 +184,7 @@ export const queryPinecone = async (req: Request, res: Response) => {
 export const testSearch = async (req: Request, res: Response) => {
     try {
         const { question } = req.body
-        console.log(`🔍 Testing search for question: "${question}"`)
+        // console.log(`Testing search for question: "${question}"`)
         
         if (!question) {
             return res.status(statusCodes.BAD_REQUEST).json({
@@ -195,11 +195,11 @@ export const testSearch = async (req: Request, res: Response) => {
 
         // Generate embedding for the question
         const questionEmbedding = await embeddingService.generateEmbedding(question)
-        console.log(`🧠 Generated question embedding: ${questionEmbedding.length} dimensions`)
+        // console.log(`Generated question embedding: ${questionEmbedding.length} dimensions`)
         
         // Search for similar chunks
         const matches = await embeddingService.querySimilarDocuments(questionEmbedding, 5)
-        console.log(`📚 Found ${matches.length} relevant chunks`)
+        // console.log(`Found ${matches.length} relevant chunks`)
         
         const resultsWithContent = matches.map((match, index) => ({
             rank: index + 1,

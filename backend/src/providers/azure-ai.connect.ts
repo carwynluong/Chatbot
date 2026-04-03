@@ -162,11 +162,11 @@ export default azureClient
 // Test connection
 export async function testAzureConnection(): Promise<boolean> {
     try {
-        console.log('🔍 Testing Azure OpenAI client configuration...')
-        console.log(`📍 Endpoint: ${AZURE_OPENAI_ENDPOINT}`)
-        console.log(`🔌 API Version: ${AZURE_OPENAI_API_VERSION}`)
-        console.log(`🤖 LLM Deployment: ${AZURE_LLM_DEPLOYMENT_NAME}`)
-        console.log(`📝 Embedding Deployment: ${AZURE_EMBEDDING_DEPLOYMENT_NAME}`)
+        // console.log('Testing Azure OpenAI client configuration...')
+        // console.log(`Endpoint: ${AZURE_OPENAI_ENDPOINT}`)
+        // console.log(`API Version: ${AZURE_OPENAI_API_VERSION}`)
+        // console.log(`LLM Deployment: ${AZURE_LLM_DEPLOYMENT_NAME}`)
+        // console.log(`Embedding Deployment: ${AZURE_EMBEDDING_DEPLOYMENT_NAME}`)
         
         // Test LLM deployment
         if (AZURE_LLM_DEPLOYMENT_NAME) {
@@ -183,7 +183,7 @@ export async function testAzureConnection(): Promise<boolean> {
                     max_completion_tokens: 20,
                     temperature: 0.1
                 })
-                console.log('✅ LLM deployment test successful')
+                // console.log('LLM deployment test successful')
             } catch (error: any) {
                 console.error('❌ LLM deployment test failed. Full error details:')
                 console.error('Error object:', JSON.stringify(error, null, 2))
@@ -200,7 +200,7 @@ export async function testAzureConnection(): Promise<boolean> {
                     model: AZURE_EMBEDDING_DEPLOYMENT_NAME,
                     input: "test embedding"
                 })
-                console.log('✅ Embedding deployment test successful')
+                // console.log('Embedding deployment test successful')
             } catch (error: any) {
                 console.error('❌ Embedding deployment test failed. Full error details:')
                 console.error('Error object:', JSON.stringify(error, null, 2))

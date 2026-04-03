@@ -525,7 +525,7 @@ export class EmbeddingService {
     private async initializePinecone(): Promise<void> {
         try {
             await pineconeService.healthCheck()
-            console.log('✅ Pinecone initialized successfully')
+            // console.log('Pinecone initialized successfully')
         } catch (error) {
             console.warn('⚠️  Failed to initialize Pinecone:', error)
             throw error

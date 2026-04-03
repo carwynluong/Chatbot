@@ -29,7 +29,7 @@ export class PineconeService {
     async healthCheck(): Promise<boolean> {
         try {
             await this.pinecone.listIndexes()
-            console.log('✅ Pinecone connection successful')
+            // console.log('Pinecone connection successful')
             return true
         } catch (error) {
             console.error('❌ Pinecone connection failed:', error)

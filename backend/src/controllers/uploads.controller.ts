@@ -30,7 +30,7 @@ export class S3Controller {
             const results = await S3Service.uploadMultipleFiles(uploadData)
 
             // Automatically trigger embedding processing for uploaded files
-            console.log('🚀 Starting automatic embedding processing for uploaded files...')
+            // console.log('Processing file embeddings automatically...')
             try {
                 const fileUrls = results.map((result, index) => ({
                     key: result.key,
@@ -40,7 +40,7 @@ export class S3Controller {
 
                 // Process embeddings in background
                 embeddingService.processMultipleFilesDirect(fileUrls).then(() => {
-                    console.log('✅ Embedding processing completed for uploaded files')
+                    // console.log('Embedding processing completed')
                 }).catch((error) => {
                     console.error('❌ Embedding processing failed:', error)
                 })

@@ -20,7 +20,7 @@ import { setupSwagger } from './config/swagger'
 
 const app = express()
 
-app.use(morgan('dev'))
+app.use(morgan('tiny'))
 app.use(cookieParser())
 app.use(bodyParser.json())
 app.use(express.urlencoded({ extended: true }))
@@ -32,69 +32,61 @@ setupSwagger(app)
 const checkConnections = async () => {
     try {
         // Test DynamoDB connection
-        console.log('🔍 Testing DynamoDB connection...')
         try {
             const command = new ListTablesCommand({})
             const result = await dynamoClient.send(command)
-            console.log(`✅ DynamoDB connection successful - Found ${result.TableNames?.length || 0} tables`)
+            console.log(`DynamoDB: Connected (${result.TableNames?.length || 0} tables)`)
         } catch (error) {
-            console.warn('⚠️  DynamoDB connection issue:', (error as Error).message)
+            console.warn('DynamoDB connection issue:', (error as Error).message)
         }
         
         // Test Pinecone connection  
-        console.log('🔍 Testing Pinecone connection...')
         const pineconeHealthy = await pineconeService.healthCheck()
         if (pineconeHealthy) {
-            console.log('✅ Pinecone connection successful')
+            console.log('Pinecone: Connected')
         } else {
-            console.warn('⚠️  Pinecone connection failed - check API key and index')
+            console.warn('Pinecone: Connection failed')
         }
 
         // Test Azure AI connection  
-        console.log('🔍 Testing Azure AI connection...')
         const isAzureReady = await testAzureConnection()
         if (isAzureReady) {
-            console.log('✅ Azure AI connection successful')
+            console.log('Azure AI: Connected')
         } else {
-            console.warn('⚠️  Azure AI connection issues detected')
+            console.warn('Azure AI: Connection issues')
         }
         
         // Test S3 connection
-        console.log('🔍 Testing S3 connection...')
         try {
             // First check if bucket exists
             const s3Command = new HeadBucketCommand({ Bucket: S3_BUCKET_NAME })
             await s3Client.send(s3Command)
-            console.log(`✅ S3 connection successful - bucket ${S3_BUCKET_NAME} accessible`)
+            console.log(`S3: Bucket ${S3_BUCKET_NAME} accessible`)
         } catch (error: any) {
-            console.warn(`⚠️  S3 bucket ${S3_BUCKET_NAME} not accessible in region us-east-1`)
+            console.warn(`S3: Bucket ${S3_BUCKET_NAME} not accessible`)
             
             if (error.name === 'NoSuchBucket') {
-                console.log('🔧 Bucket does not exist. Attempting to create...')
                 try {
                     const createCommand = new CreateBucketCommand({ 
                         Bucket: S3_BUCKET_NAME,
                         // Don't specify LocationConstraint for us-east-1 (default region)
                     })
                     await s3Client.send(createCommand)
-                    console.log(`✅ Created S3 bucket: ${S3_BUCKET_NAME}`)
+                    console.log(`S3: Created bucket ${S3_BUCKET_NAME}`)
                 } catch (createError: any) {
-                    console.error(`❌ Failed to create bucket: ${createError.message}`)
-                    console.log('💡 Please create the S3 bucket manually or check your AWS permissions')
+                    console.error(`S3: Failed to create bucket - ${createError.message}`)
                 }
             } else if (error.name === 'Forbidden') {
-                console.error('❌ Access denied to S3 bucket. Check your AWS credentials and IAM permissions')
+                console.error('S3: Access denied - Check credentials and permissions')
             } else {
-                console.error(`❌ S3 connection error: ${error.name} - ${error.message}`)
-                console.log('💡 Common issues: Wrong region, invalid credentials, or bucket in different region')
+                console.error(`S3: Connection error - ${error.name}: ${error.message}`)
             }
         }
         
-        console.log('🚀 Backend server ready for development!')
+        console.log('Backend: Server ready')
     } catch (error) {
-        console.error('❌ Connection error:', error)
-        console.warn('⚠️  Running in development mode with limited functionality')
-        console.log('💡 Check your .env file for correct API keys and configuration')
+        console.error('Connection error:', error)
+        console.warn('Running in development mode with limited functionality')
         // Don't exit in development - let the app run
     }
 }
@@ -112,8 +104,7 @@ app.use('/api/v1/embedding', EmbeddingRouter)
 app.use('/api/v1/chat', ChatRouter)
 
 app.listen(PORT, async () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`)
-    console.log(`📚 Swagger docs available at http://localhost:${PORT}/api-docs`)
-    console.log(`🎯 Health check: http://localhost:${PORT}/health`)
+    console.log(`Server running on http://localhost:${PORT}`)
+    console.log(`API docs: http://localhost:${PORT}/api-docs`)
     await checkConnections()
 })

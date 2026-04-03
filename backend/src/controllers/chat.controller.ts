@@ -73,11 +73,11 @@ export class ChatController {
     async deleteChat(req: Request, res: Response) {
         try {
             const { userId, sessionId } = req.params
-            console.log('API: Deleting chat for user:', userId, 'session:', sessionId)
+            // console.log('API: Deleting chat for user:', userId, 'session:', sessionId)
             
             await chatService.deleteChatSession(userId, sessionId)
             
-            console.log('API: Chat deleted successfully for user:', userId, 'session:', sessionId)
+            // console.log('API: Chat deleted successfully for user:', userId, 'session:', sessionId)
             res.status(statusCodes.OK).json({
                 message: 'Chat deleted successfully'
             })
