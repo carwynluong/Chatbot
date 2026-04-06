@@ -14,7 +14,7 @@ export default function Login() {
         e.preventDefault()
         try {
             await login(email, password)
-            navigate('/chat')
+            navigate('/') // Fix: redirect to home instead of chat
         } catch (error) {
             console.log(error)
         }

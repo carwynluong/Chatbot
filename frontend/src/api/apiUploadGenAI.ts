@@ -33,8 +33,8 @@ export class UploadGenAIAPI {
     }
 
     async listFiles(): Promise<ListFilesResponse> {
-        const res = await axios.get<ListFilesResponse>('/s3/list-object')
-        return res.data
+        const res = await axios.get<{ data: ListFilesResponse }>('/s3/list-object')
+        return res.data.data // Extract the data property from ResponseBuilder format
     }
 
     async getFileUrl(key: string): Promise<FileUrlResponse> {

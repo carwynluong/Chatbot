@@ -37,13 +37,23 @@ export class EmbeddingController {
             console.log(`🔄 Processing files:`, fileUrls.map(f => f.originalName))
             
             // Process files through embedding service (async)
-            this.embeddingService.processMultipleFilesDirect(fileUrls)
+            console.log('🚀 [CONTROLLER] About to call processMultipleFilesDirect...')
+            const processingPromise = this.embeddingService.processMultipleFilesDirect(fileUrls)
+            console.log('🚀 [CONTROLLER] processMultipleFilesDirect called, setting up promise handlers...')
+            
+            processingPromise
                 .then(() => {
-                    console.log('✅ Background embedding processing completed')
+                    console.log('✅ [CONTROLLER] Background embedding processing completed')
                 })
                 .catch((error) => {
-                    console.error('❌ Background embedding processing failed:', error)
+                    console.error('❌ [CONTROLLER] Background embedding processing failed:', {
+                        error: error,
+                        message: error instanceof Error ? error.message : 'Unknown error',
+                        stack: error instanceof Error ? error.stack : undefined
+                    })
                 })
+            
+            console.log('📤 [CONTROLLER] Returning immediate response to client...')
             
             // Return immediate response
             ResponseBuilder.success({

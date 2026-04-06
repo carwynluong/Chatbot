@@ -17,7 +17,7 @@ export const useAuth = create<AuthState>((set) => ({
                 email, password
             })
 
-            const { user } = res.data
+            const { user } = res.data.data // Fix: access user from data.data
             console.log("Người dùng: ", user)
             set({ user, isAuthenticated: true, isLoading: false })
             toast.success('Login successful')
@@ -35,7 +35,7 @@ export const useAuth = create<AuthState>((set) => ({
                 name, email, password
             })
 
-            const { user } = res.data
+            const { user } = res.data.data // Fix: access user from data.data
 
             set({ user, isAuthenticated: true, isLoading: false })
             toast.success('Registration successful')
@@ -61,7 +61,7 @@ export const useAuth = create<AuthState>((set) => ({
     checkAuth: async () => {
         try {
             const res = await axios.get('/auth/profile')
-            const { user } = res.data
+            const user = res.data.data // Fix: access user data directly from data
             set({ user, isAuthenticated: true })
 
         } catch (error) {

@@ -103,6 +103,11 @@ export class PineconeStorageStrategy implements IVectorStorageStrategy {
 
     async query(vector: number[], topK: number = 5): Promise<Array<{id: string, score: number, metadata?: any}>> {
         try {
+            console.log('🟡 Pinecone Query Debug:')
+            console.log(`   Index: ${this.indexName}`)
+            console.log(`   Vector dimension: ${vector.length}`)
+            console.log(`   TopK: ${topK}`)
+            
             const index = await pineconeService.getIndex(this.indexName)
             const queryResponse = await index.query({
                 vector,
@@ -111,13 +116,20 @@ export class PineconeStorageStrategy implements IVectorStorageStrategy {
                 includeValues: false
             })
             
+            console.log('✅ Query successful, results:', queryResponse.matches?.length)
+            
             return queryResponse.matches?.map(match => ({
                 id: match.id || '',
                 score: match.score || 0,
                 metadata: match.metadata
             })) || []
         } catch (error) {
-            console.error('Pinecone query error:', error)
+            console.error('❌ Pinecone query error details:')
+            console.error('   Index:', this.indexName)
+            console.error('   Vector dimension:', vector.length)
+            console.error('   Error type:', typeof error)
+            console.error('   Error message:', (error as any)?.message)
+            console.error('   Full error:', error)
             throw new Error(`Failed to query vectors: ${error}`)
         }
     }

@@ -41,10 +41,12 @@ export class DocumentRepository implements IDocumentRepository {
 
     async findByStatus(status: 'processing' | 'embedded' | 'error'): Promise<DocumentMetadata[]> {
         try {
-            const result = await dynamoClient.send(new QueryCommand({
+            console.log('🔍 Finding documents by status:', status)
+            
+            // Use scan with filter instead of GSI query
+            const result = await dynamoClient.send(new ScanCommand({
                 TableName: this.tableName,
-                IndexName: 'StatusIndex',
-                KeyConditionExpression: '#status = :status',
+                FilterExpression: '#status = :status',
                 ExpressionAttributeNames: {
                     '#status': 'status'
                 },
@@ -53,9 +55,12 @@ export class DocumentRepository implements IDocumentRepository {
                 }
             }))
             
-            return result.Items as DocumentMetadata[] || []
+            const documents = result.Items as DocumentMetadata[] || []
+            console.log(`📊 Found ${documents.length} documents with status '${status}'`)
+            
+            return documents
         } catch (error) {
-            console.error('Error finding documents by status:', error)
+            console.error('❌ Error finding documents by status:', error)
             return []
         }
     }

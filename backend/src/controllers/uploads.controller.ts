@@ -251,13 +251,42 @@ export class UploadsController {
 
     async listFiles(req: Request, res: Response) {
         try {
-            // This would require implementing a list method in the storage strategy
-            // For now, we'll return a placeholder response
+            const userId = (req as any).user?.id
+            
+            if (!userId) {
+                return ResponseBuilder.unauthorized('User not authenticated')
+                    .send(res)
+            }
+
+            console.log('📄 Listing documents for user:', userId)
+            
+            // Import document service
+            const { default: documentService } = await import('../services/document.service')
+            
+            // Get all documents (later can filter by user)
+            const documents = await documentService.getAllDocuments()
+            
+            console.log(`📄 Found ${documents.length} documents`)
+            
+            // Transform documents to match frontend expectations
+            const files = documents.map(doc => ({
+                key: doc.s3Key || doc.id,
+                size: doc.fileSize || 0,
+                url: doc.s3Url || '',
+                isEmbedded: doc.status === 'embedded',
+                // Additional metadata 
+                fileName: doc.fileName,
+                fileType: doc.fileType,
+                status: doc.status,
+                totalChunks: doc.totalChunks,
+                createdAt: doc.createdAt,
+                updatedAt: doc.updatedAt
+            }))
             
             ResponseBuilder.success({
-                files: [],
-                message: 'List files feature not implemented yet'
-            }, 'Files list retrieved')
+                files: files,
+                count: files.length
+            }, 'Files retrieved successfully')
                 .send(res)
 
         } catch (error) {

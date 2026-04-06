@@ -12,23 +12,27 @@ function App() {
 
   useEffect(() => {
     checkAuth()
-  }, [checkAuth])
-  
+  }, [])
+
   return (
     <>
       <Routes>
         {/* Auth routes without layout */}
         <Route path='/login' element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
-        <Route path='/register' element={!isAuthenticated ? <Register /> : <Navigate to="/login" />} />
+        <Route path='/register' element={!isAuthenticated ? <Register /> : <Navigate to="/" />} />
         
-        {/* Main app routes with layout */}
+        {/* Protected routes with authentication check */}
         <Route path='/*' element={
-          <Layout>
-            <Routes>
-              <Route path='/' element={<ChatInterface />} />
-              <Route path='/chat' element={<Navigate to="/" />} />
-            </Routes>
-          </Layout>
+          isAuthenticated ? (
+            <Layout>
+              <Routes>
+                <Route path='/' element={<ChatInterface />} />
+                <Route path='/chat' element={<Navigate to="/" />} />
+              </Routes>
+            </Layout>
+          ) : (
+            <Navigate to="/login" />
+          )
         } />
       </Routes>
       <Toaster position='top-right' />

@@ -100,15 +100,8 @@ export class DocumentService {
     }
 
     async listDocuments(): Promise<DocumentMetadata[]> {
-        // DynamoDB scan for all documents
-        // Note: In production, you might want to use pagination or GSI for better performance
-        const result = await dynamoClient.send(new QueryCommand({
-            TableName: DOCUMENT_TABLE_NAME,
-            // This assumes you have a GSI on status or you're scanning the table
-            // For demo purposes, we'll scan (not recommended for production)
-        }))
-
-        return result.Items as DocumentMetadata[] || []
+        // Use getAllDocuments instead of broken QueryCommand
+        return await this.getAllDocuments()
     }
 
     async deleteDocument(documentId: string): Promise<void> {
@@ -124,11 +117,10 @@ export class DocumentService {
     }
 
     async getDocumentsByStatus(status: 'processing' | 'embedded' | 'error'): Promise<DocumentMetadata[]> {
-        // This would require a GSI on status field
-        const result = await dynamoClient.send(new QueryCommand({
+        // Use scan with filter instead of non-existent GSI
+        const result = await dynamoClient.send(new ScanCommand({
             TableName: DOCUMENT_TABLE_NAME,
-            IndexName: 'status-index', // You need to create this GSI
-            KeyConditionExpression: '#status = :status',
+            FilterExpression: '#status = :status',
             ExpressionAttributeNames: {
                 '#status': 'status'
             },

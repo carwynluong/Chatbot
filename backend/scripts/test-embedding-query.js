@@ -1,0 +1,1 @@
+const EmbeddingService = require('../src/services/embedding.service.ts')

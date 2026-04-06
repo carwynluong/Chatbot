@@ -16,6 +16,13 @@ export interface ListFilesResponse {
     size: number;
     url: string;
     isEmbedded?: boolean;
+    // Additional metadata
+    fileName?: string;
+    fileType?: string;
+    status?: string;
+    totalChunks?: number;
+    createdAt?: string;
+    updatedAt?: string;
   }[];
 }
 
@@ -34,4 +41,11 @@ export interface FileItem {
   url: string;
   isEmbedded?: boolean;
   name?: string;
+  // Additional metadata
+  fileName?: string;
+  fileType?: string;
+  status?: string;
+  totalChunks?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }

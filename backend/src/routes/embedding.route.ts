@@ -41,6 +41,9 @@ router.get('/test', (req, res) => {
     res.json({ message: 'Embedding route is working!', timestamp: new Date().toISOString() })
 })
 
+// Health check route
+router.get('/health', embeddingController.healthCheck.bind(embeddingController))
+
 // Generate test token for debugging
 router.get('/test-token', (req, res) => {
     const jwt = require('jsonwebtoken')

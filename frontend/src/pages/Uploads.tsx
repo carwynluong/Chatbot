@@ -19,13 +19,14 @@ export default function UploadPage() {
     const loadFiles = async () => {
         try {
             const res = await UploadGenAIAPI.listFiles()
-            const fileWithEmbeding = res.files.map(file => ({
+            const fileWithEmbedding = res.files.map(file => ({
                 ...file,
-                name: file.key.split('/').pop() || file.key,
-                isEmbedded: embeddedFiles.has(file.key),
+                name: file.fileName || file.key.split('/').pop() || file.key,
+                isEmbedded: file.status === 'embedded',
             }))
-            setFiles(fileWithEmbeding)
+            setFiles(fileWithEmbedding)
         } catch (error) {
+            console.error('Load files error:', error)
             toast.error('Failed to load files. Please try again.')
         }
     }

@@ -39,8 +39,10 @@ export default function Sidebar() {
     
     try {
       const response = await ChatAPI.getChatHistory(user.id)
-      if (response.history) {
-        const sessions = response.history
+      
+      // Fix: Access history from response.data.history
+      if (response.data && response.data.history) {
+        const sessions = response.data.history
           .map((session: any, index: number) => ({
             id: session.sessionId || `session-${index}`,
             title: session.messages?.[0]?.content?.substring(0, 30) + '...' || `Chat ${index + 1}`,
@@ -48,6 +50,7 @@ export default function Sidebar() {
             messageCount: session.messages?.length || 0
           }))
         setChatSessions(sessions)
+        console.log('✅ Loaded chat sessions:', sessions.length)
       }
     } catch (error) {
       console.error('Failed to load chat sessions:', error)

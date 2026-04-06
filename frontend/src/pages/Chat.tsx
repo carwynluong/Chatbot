@@ -30,12 +30,17 @@ export default function ChatInterface() {
         // If specific chat ID is provided, try to load that session
         if (chatId && chatId !== currentChatId) {
             ChatAPI.getChatHistory(user.id).then((response) => {
-                if (response.history && response.history.length > 0) {
-                    const targetSession = response.history.find((session: any) => 
-                        session.sessionId === chatId || `session-${response.history.indexOf(session)}` === chatId
-                    )
+                // Fix: Access history from response.data.history
+                if (response.data && response.data.history && response.data.history.length > 0) {
+                    const targetSession = response.data.history.find((session: any, index: number) => {
+                        // Try multiple ways to match session
+                        return session.sessionId === chatId || 
+                               `session-${index}` === chatId ||
+                               session.timestamp?.toString() === chatId
+                    })
                     
                     if (targetSession) {
+                        console.log('\u2705 Found target session:', targetSession.sessionId || chatId)
                         const messagesWithDate = targetSession.messages.map((msg: any) => ({
                             ...msg,
                             timestamp: new Date(msg.timestamp)
@@ -43,6 +48,7 @@ export default function ChatInterface() {
                         setMessages(messagesWithDate)
                         setCurrentChatId(chatId)
                     } else {
+                        console.log('❌ Session not found:', chatId)
                         // Session not found, start new chat
                         setMessages([])
                         setCurrentChatId(chatId)
@@ -51,15 +57,17 @@ export default function ChatInterface() {
                     setMessages([])
                     setCurrentChatId(chatId)
                 }
-            }).catch(() => {
+            }).catch((error) => {
+                console.error('Failed to load chat session:', error)
                 setMessages([])
                 setCurrentChatId(chatId)
             })
         } else if (!chatId && !currentChatId) {
             // No specific chat ID, load latest session (default behavior)
             ChatAPI.getChatHistory(user.id).then((response) => {
-                if (response.history && response.history.length > 0) {
-                    const latestSession = response.history.reduce((latest, current) => 
+                // Fix: Access history from response.data.history
+                if (response.data && response.data.history && response.data.history.length > 0) {
+                    const latestSession = response.data.history.reduce((latest, current) => 
                         current.timestamp > latest.timestamp ? current : latest
                     )
                     

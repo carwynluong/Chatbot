@@ -1,4 +1,4 @@
-import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb"
+import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb"
 import { dynamoClient } from "../providers/dynamodb.connect"
 import { IUserRepository } from "../interfaces/IRepository"
 import { User, CreateUserInput } from "../models/user.model"
@@ -42,10 +42,10 @@ export class UserRepository implements IUserRepository {
 
     async findByEmail(email: string): Promise<User | null> {
         try {
-            const result = await dynamoClient.send(new QueryCommand({
+            // Use Scan instead of Query since EmailIndex GSI doesn't exist
+            const result = await dynamoClient.send(new ScanCommand({
                 TableName: this.tableName,
-                IndexName: 'EmailIndex',
-                KeyConditionExpression: 'email = :email',
+                FilterExpression: 'email = :email',
                 ExpressionAttributeValues: {
                     ':email': email
                 }

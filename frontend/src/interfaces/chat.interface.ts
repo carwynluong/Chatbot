@@ -7,12 +7,19 @@ export interface Message {
 
 
 export interface ChatHistoryResponse {
+    success: boolean
+    statusCode: number
     message: string
-    history: Array<{
-        userId: string
-        messages: Message[]
-        createdAt: string
-        updatedAt: string
-        timestamp: number
-    }>
+    data: {
+        history: Array<{
+            userId: string
+            messages: Message[]
+            createdAt: string
+            updatedAt: string
+            timestamp: number
+            sessionId?: string
+        }>
+        count?: number
+    }
+    timestamp?: string
 }
