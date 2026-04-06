@@ -68,7 +68,7 @@ const router = Router()
  *             schema:
  *               $ref: '#/components/schemas/AuthResponse'
  */
-router.post('/register', authController.register)
+router.post('/register', authController.register.bind(authController))
 /**
  * @swagger
  * /api/v1/auth/login:
@@ -99,7 +99,7 @@ router.post('/register', authController.register)
  *             schema:
  *               $ref: '#/components/schemas/AuthResponse'
  */
-router.post('/login', authController.login)
+router.post('/login', authController.login.bind(authController))
 /**
  * @swagger
  * /api/v1/auth/logout:
@@ -112,7 +112,7 @@ router.post('/login', authController.login)
  *       200:
  *         description: Logout successful
  */
-router.post('/logout', authController.logout)
+router.post('/logout', authController.logout.bind(authController))
 /**
  * @swagger
  * /api/v1/auth/refresh:
@@ -123,7 +123,7 @@ router.post('/logout', authController.logout)
  *       200:
  *         description: Token refreshed successfully
  */
-router.post('/refresh', authController.refreshToken)
+router.post('/refresh', authController.refreshToken.bind(authController))
 /**
  * @swagger
  * /api/v1/auth/profile:
@@ -140,6 +140,6 @@ router.post('/refresh', authController.refreshToken)
  *             schema:
  *               $ref: '#/components/schemas/AuthResponse'
  */
-router.get('/profile', requireAuth, authController.getProfile)
+router.get('/profile', requireAuth, authController.getProfile.bind(authController))
 
 export default router

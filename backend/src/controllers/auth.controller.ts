@@ -1,35 +1,54 @@
 import { Request, Response } from 'express'
 import AuthService from '../services/auth.service'
-import statusCodes from '../constants/statusCodes'
+import { ResponseBuilder } from '../utils/builders'
+import { ErrorFactory } from '../utils/pattern.factories'
 import { setCookie } from '../utils/cookie.util'
-export class AuthController {
 
+export class AuthController {
+    private authService: typeof AuthService
+    private errorFactory: ErrorFactory
+
+    constructor() {
+        this.authService = AuthService
+        this.errorFactory = new ErrorFactory()
+    }
 
     async register(req: Request, res: Response) {
         try {
             const { email, password, name, role } = req.body
+            
+            // Validation
             if (!email || !password || !name) {
-                return res.status(statusCodes.BAD_REQUEST).json({
-                    message: 'Name, email and password are required'
-                })
+                return ResponseBuilder.validation('Name, email and password are required')
+                    .send(res)
             }
 
-            const data = await AuthService.register({ email, password, name, role })
+            // Register user
+            const data = await this.authService.register({ email, password, name, role })
 
+            // Set cookies
             await setCookie(res, data.accessToken, data.refreshToken)
 
-            res.status(statusCodes.CREATED).json(
-                {
-                    messages: 'User registered successfully',
-                    ...data
-                }
-            )
+            // Send response
+            ResponseBuilder.success({
+                user: data.user,
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken
+            }, 'User registered successfully')
+                .setStatus(201)
+                .send(res)
+
         } catch (error) {
-            console.error('Error in register controller:', error)
+            console.error('❌ Error in register controller:', error)
             
-            return res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-                message: 'Internal server error'
-            })
+            if ((error as any).name === 'ValidationError') {
+                ResponseBuilder.validation((error as Error).message)
+                    .send(res)
+            } else {
+                ResponseBuilder.error('Registration failed')
+                    .setStatus(500)
+                    .send(res)
+            }
         }
     }
 
@@ -37,91 +56,125 @@ export class AuthController {
         try {
             const { email, password } = req.body
 
+            // Validation
             if (!email || !password) {
-                return res.status(statusCodes.BAD_REQUEST).json({
-                    message: 'Email and password are required'
-                })
+                return ResponseBuilder.validation('Email and password are required')
+                    .send(res)
             }
 
-            const data = await AuthService.login(email, password)
+            // Login user
+            const data = await this.authService.login(email, password)
 
-            // Set cookie
+            // Set cookies
             await setCookie(res, data.accessToken, data.refreshToken)
 
-            res.status(statusCodes.OK).json({
-                message: 'User logged in successfully',
-                ...data
-            })
+            // Send response
+            ResponseBuilder.success({
+                user: data.user,
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken
+            }, 'Login successful')
+                .send(res)
+
         } catch (error) {
-            console.error('Error in login controller:', error)
+            console.error('❌ Error in login controller:', error)
             
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-                message: 'Internal server error'
-            })
+            if ((error as any).name === 'AuthenticationError') {
+                ResponseBuilder.unauthorized((error as Error).message)
+                    .send(res)
+            } else {
+                ResponseBuilder.error('Login failed')
+                    .setStatus(500)
+                    .send(res)
+            }
         }
     }
 
     async refreshToken(req: Request, res: Response) {
         try {
-            const refreshToken = req.cookies.refreshToken
+            const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken
 
             if (!refreshToken) {
-                return res.status(statusCodes.UNAUTHORIZED).json({
-                    message: 'Refresh token required'
-                })
+                return ResponseBuilder.unauthorized('Refresh token is required')
+                    .send(res)
             }
 
-            const data = await AuthService.refreshAccessToken(refreshToken)
+            // Refresh tokens
+            const tokens = await this.authService.refreshAccessToken(refreshToken)
 
             // Set new cookies
-            await setCookie(res, data.accessToken, data.refreshToken)
+            await setCookie(res, tokens.accessToken, tokens.refreshToken)
 
-            res.status(statusCodes.OK).json({
-                message: 'Token refreshed successfully'
-            })
+            // Send response
+            ResponseBuilder.success(tokens, 'Tokens refreshed successfully')
+                .send(res)
+
         } catch (error) {
-            res.status(statusCodes.UNAUTHORIZED).json({
-                message: 'Invalid refresh token'
-            })
+            console.error('❌ Error in refresh token controller:', error)
+            
+            if ((error as any).name === 'AuthenticationError') {
+                ResponseBuilder.unauthorized((error as Error).message)
+                    .send(res)
+            } else {
+                ResponseBuilder.error('Token refresh failed')
+                    .setStatus(500)
+                    .send(res)
+            }
         }
     }
 
     async logout(req: Request, res: Response) {
         try {
             const userId = (req as any).user?.id
-            if (userId) {
-                await AuthService.logout(userId)
+
+            if (!userId) {
+                return ResponseBuilder.unauthorized('User not authenticated')
+                    .send(res)
             }
 
+            // Logout user
+            await this.authService.logout(userId)
+
+            // Clear cookies
             res.clearCookie('accessToken')
             res.clearCookie('refreshToken')
-            res.status(statusCodes.OK).json({
-                message: 'Logout successful'
-            })
+
+            // Send response
+            ResponseBuilder.success(null, 'Logged out successfully')
+                .send(res)
+
         } catch (error) {
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-                message: 'Logout failed'
-            })
+            console.error('❌ Error in logout controller:', error)
+            
+            ResponseBuilder.error('Logout failed')
+                .setStatus(500)
+                .send(res)
         }
     }
 
     async getProfile(req: Request, res: Response) {
         try {
             const user = (req as any).user
+
             if (!user) {
-                return res.status(statusCodes.UNAUTHORIZED).json({
-                    message: 'Unauthorized'
-                })
+                return ResponseBuilder.unauthorized('User not authenticated')
+                    .send(res)
             }
-            res.status(statusCodes.OK).json({
-                message: 'Get Profile succesfully',
-                user
-            })
+
+            // Send user profile
+            ResponseBuilder.success({
+                id: user.id,
+                email: user.email,
+                role: user.role
+            }, 'Profile retrieved successfully')
+                .send(res)
+
         } catch (error) {
-            console.error('Error in getProfile controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-                message: 'Internal server error'
-            })
+            console.error('❌ Error in get profile controller:', error)
+            
+            ResponseBuilder.error('Failed to get profile')
+                .setStatus(500)
+                .send(res)
         }
     }
 }

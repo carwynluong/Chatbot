@@ -1,228 +1,172 @@
 import { Request, Response } from 'express'
-import statusCodes from '../constants/statusCodes'
 import embeddingService from '../services/embedding.service'
-import s3Service from '../services/uploads.service'
-import documentService from '../services/document.service'
+import uploadsService from '../services/uploads.service'
+import { ResponseBuilder } from '../utils/builders'
+import { ErrorFactory } from '../utils/pattern.factories'
+import statusCodes from '../constants/statusCodes'
 
-export const processFileEmbedding = async (req: Request, res: Response) => {
-    try {
-        // console.log('Processing file embeddings...')
-        // console.log('Embedding service type:', typeof embeddingService)
-        // console.log('S3 service type:', typeof s3Service)
-        
-        const { fileKeys } = req.body
-        
-        // console.log('Received fileKeys:', fileKeys)
-        
-        if (!fileKeys || !Array.isArray(fileKeys) || fileKeys.length === 0) {
-            console.log('Invalid fileKeys')
-            return res.status(statusCodes.BAD_REQUEST).json({
-                success: false,
-                message: 'fileKeys array is required'
-            })
-        }
-        
-        // Convert file keys to URLs
-        // console.log('Converting file keys to URLs...')
-        const fileUrls = fileKeys.map(key => {
-            const url = s3Service.getS3Url(key)
-            console.log(`  ${key} -> ${url}`)
-            return { key: key, url: url }
-        })
-        
-        // console.log(`Processing ${fileUrls.length} files:`)
-        // fileUrls.forEach(f => console.log(`  - ${f.key}`))
-        
-        // Process files through embedding service
-        // console.log('Calling embedding service...')
-        await embeddingService.processMultipleFilesDirect(fileUrls)
-        // console.log('Embedding service completed')
-        
-        console.log('Files processed successfully')
-        
-        res.status(statusCodes.OK).json({
-            success: true,
-            message: `Successfully processed ${fileUrls.length} files`,
-            filesProcessed: fileKeys,
-            timestamp: new Date()
-        })
-        
-    } catch (error) {
-        console.error('❌ Embedding processing error:', error)
-        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: 'Failed to process embeddings',
-            error: (error as Error).message
-        })
+export class EmbeddingController {
+    private embeddingService: typeof embeddingService
+    private uploadsService: typeof uploadsService
+    private errorFactory: ErrorFactory
+
+    constructor() {
+        this.embeddingService = embeddingService
+        this.uploadsService = uploadsService
+        this.errorFactory = new ErrorFactory()
     }
-}
 
-export const initializePinecone = async (req: Request, res: Response) => {
-    try {
-        const { Pinecone } = require('@pinecone-database/pinecone')
-        const pinecone = new Pinecone({
-            apiKey: process.env.PINECONE_API_KEY
-        })
-        
-        const indexes = await pinecone.listIndexes()
-        
-        res.status(statusCodes.OK).json({
-            success: true,
-            message: 'Pinecone connection successful',
-            indexes: indexes.indexes?.map((i: any) => i.name)
-        })
-        
-    } catch (error) {
-        console.error('❌ Pinecone initialization error:', error)
-        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: 'Pinecone connection failed',
-            error: (error as Error).message
-        })
-    }
-}
-
-export const getDocuments = async (req: Request, res: Response) => {
-    try {
-        // console.log('Getting all documents...')
-        const documents = await documentService.getAllDocuments()
-        
-        // Get detailed status for each document
-        const documentsWithDetails = documents.map(doc => ({
-            id: doc.id,
-            fileName: doc.fileName,
-            status: doc.status,
-            totalChunks: doc.totalChunks,
-            createdAt: doc.createdAt,
-            updatedAt: doc.updatedAt,
-            errorMessage: doc.errorMessage,
-            isReady: doc.status === 'embedded' && doc.totalChunks > 0
-        }))
-        
-        const readyFiles = documentsWithDetails.filter(doc => doc.isReady).length
-        const processingFiles = documentsWithDetails.filter(doc => doc.status === 'processing').length
-        const errorFiles = documentsWithDetails.filter(doc => doc.status === 'error').length
-        
-        res.status(statusCodes.OK).json({
-            success: true,
-            documents: documentsWithDetails,
-            summary: {
-                total: documents.length,
-                ready: readyFiles,
-                processing: processingFiles,
-                error: errorFiles
+    async processFileEmbedding(req: Request, res: Response) {
+        try {
+            const { fileKeys } = req.body
+            
+            if (!fileKeys || !Array.isArray(fileKeys) || fileKeys.length === 0) {
+                return ResponseBuilder.validation('fileKeys array is required')
+                    .send(res)
             }
-        })
-    } catch (error) {
-        console.error('❌ Error getting documents:', error)
-        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: 'Failed to get documents',
-            error: error instanceof Error ? error.message : 'Unknown error'
-        })
-    }
-}
-
-export const testEmbedding = async (req: Request, res: Response) => {
-    try {
-        const { text } = req.body
-        // console.log(`Testing embedding generation for: "${text?.substring(0, 50)}..."`)
-        
-        if (!text) {
-            return res.status(statusCodes.BAD_REQUEST).json({
-                success: false,
-                message: 'text is required'
-            })
+            
+            console.log(`📤 Processing ${fileKeys.length} files for embedding...`)
+            
+            // Convert file keys to URLs
+            const fileUrls = fileKeys.map(key => ({
+                key: key,
+                url: this.uploadsService.getS3Url(key),
+                originalName: key.split('/').pop() // Extract filename from key
+            }))
+            
+            console.log(`🔄 Processing files:`, fileUrls.map(f => f.originalName))
+            
+            // Process files through embedding service (async)
+            this.embeddingService.processMultipleFilesDirect(fileUrls)
+                .then(() => {
+                    console.log('✅ Background embedding processing completed')
+                })
+                .catch((error) => {
+                    console.error('❌ Background embedding processing failed:', error)
+                })
+            
+            // Return immediate response
+            ResponseBuilder.success({
+                filesProcessed: fileKeys,
+                status: 'processing',
+                message: `Started processing ${fileKeys.length} files for embeddings`
+            }, 'Files submitted for processing successfully')
+                .send(res)
+            
+        } catch (error) {
+            console.error('❌ Error in process file embedding:', error)
+            
+            ResponseBuilder.error('Failed to process file embeddings')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .setData({ error: error instanceof Error ? error.message : 'Unknown error' })
+                .send(res)
         }
-
-        const embedding = await embeddingService.generateEmbedding(text)
-        // console.log(`Generated embedding: ${embedding.length} dimensions`)
-        
-        res.status(statusCodes.OK).json({
-            success: true,
-            embedding: embedding,
-            dimensions: embedding.length
-        })
-    } catch (error) {
-        console.error('❌ Error generating embedding:', error)
-        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: 'Failed to generate embedding'
-        })
     }
-}
 
-export const queryPinecone = async (req: Request, res: Response) => {
-    try {
-        const { embedding, topK = 5 } = req.body
-        // console.log(`Testing Pinecone query with ${embedding?.length} dimensional vector, topK: ${topK}`)
-        
-        if (!embedding || !Array.isArray(embedding)) {
-            return res.status(statusCodes.BAD_REQUEST).json({
-                success: false,
-                message: 'embedding array is required'
-            })
+    async queryEmbeddings(req: Request, res: Response) {
+        try {
+            const { query, topK = 5 } = req.body
+
+            if (!query) {
+                return ResponseBuilder.validation('Query text is required')
+                    .send(res)
+            }
+
+            // Query similar embeddings
+            const results = await this.embeddingService.queryEmbeddings(query, topK)
+
+            ResponseBuilder.success({
+                query,
+                topK,
+                results,
+                count: results.length
+            }, 'Query completed successfully')
+                .send(res)
+
+        } catch (error) {
+            console.error('❌ Error querying embeddings:', error)
+            
+            ResponseBuilder.error('Failed to query embeddings')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .send(res)
         }
-
-        const matches = await embeddingService.querySimilarDocuments(embedding, topK)
-        // console.log(`Found ${matches.length} similar documents`)
-        
-        res.status(statusCodes.OK).json({
-            success: true,
-            matches: matches,
-            count: matches.length
-        })
-    } catch (error) {
-        console.error('❌ Error querying Pinecone:', error)
-        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: 'Failed to query Pinecone'
-        })
     }
-}
 
-export const testSearch = async (req: Request, res: Response) => {
-    try {
-        const { question } = req.body
-        // console.log(`Testing search for question: "${question}"`)
-        
-        if (!question) {
-            return res.status(statusCodes.BAD_REQUEST).json({
-                success: false,
-                message: 'question is required'
-            })
+    async getProcessingStatus(req: Request, res: Response) {
+        try {
+            const status = this.embeddingService.getProcessingStatus()
+
+            ResponseBuilder.success(status, 'Processing status retrieved successfully')
+                .send(res)
+
+        } catch (error) {
+            console.error('❌ Error getting processing status:', error)
+            
+            ResponseBuilder.error('Failed to get processing status')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .send(res)
         }
+    }
 
-        // Generate embedding for the question
-        const questionEmbedding = await embeddingService.generateEmbedding(question)
-        // console.log(`Generated question embedding: ${questionEmbedding.length} dimensions`)
-        
-        // Search for similar chunks
-        const matches = await embeddingService.querySimilarDocuments(questionEmbedding, 5)
-        // console.log(`Found ${matches.length} relevant chunks`)
-        
-        const resultsWithContent = matches.map((match, index) => ({
-            rank: index + 1,
-            score: match.score,
-            documentId: match.metadata?.documentId,
-            fileName: match.metadata?.fileName,
-            chunkIndex: match.metadata?.chunkIndex,
-            content: match.metadata?.content || 'No content available',
-            contentPreview: (match.metadata?.content || '').substring(0, 200) + '...'
-        }))
-        
-        res.status(statusCodes.OK).json({
-            success: true,
-            question: question,
-            totalMatches: matches.length,
-            results: resultsWithContent
-        })
-    } catch (error) {
-        console.error('❌ Error testing search:', error)
-        res.status(statusCodes.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: 'Failed to test search',
-            error: error instanceof Error ? error.message : 'Unknown error'
-        })
+    async deleteDocument(req: Request, res: Response) {
+        try {
+            const { documentId } = req.params
+
+            if (!documentId) {
+                return ResponseBuilder.validation('Document ID is required')
+                    .send(res)
+            }
+
+            // Delete document and its embeddings
+            await this.embeddingService.deleteDocument(documentId)
+
+            ResponseBuilder.success(
+                { documentId }, 
+                'Document deleted successfully'
+            ).send(res)
+
+        } catch (error) {
+            console.error('❌ Error deleting document:', error)
+            
+            if ((error as any).message === 'Document not found') {
+                ResponseBuilder.notFound('Document', req.params.documentId)
+                    .send(res)
+            } else {
+                ResponseBuilder.error('Failed to delete document')
+                    .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                    .send(res)
+            }
+        }
+    }
+
+    // Health check for embedding service
+    async healthCheck(req: Request, res: Response) {
+        try {
+            // Test embedding generation
+            const testEmbedding = await this.embeddingService.generateEmbedding('test')
+            const isHealthy = Array.isArray(testEmbedding) && testEmbedding.length > 0
+
+            if (isHealthy) {
+                ResponseBuilder.success({
+                    status: 'healthy',
+                    embeddingDimensions: testEmbedding.length
+                }, 'Embedding service is healthy')
+                    .send(res)
+            } else {
+                ResponseBuilder.error('Embedding service is unhealthy')
+                    .setStatus(statusCodes.SERVICE_UNAVAILABLE || 503)
+                    .send(res)
+            }
+
+        } catch (error) {
+            console.error('❌ Health check failed:', error)
+            
+            ResponseBuilder.error('Embedding service is unhealthy')
+                .setStatus(statusCodes.SERVICE_UNAVAILABLE || 503)
+                .setData({ error: error instanceof Error ? error.message : 'Unknown error' })
+                .send(res)
+        }
     }
 }
+
+export default new EmbeddingController()

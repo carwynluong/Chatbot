@@ -125,27 +125,63 @@ class AzureOpenAIClient {
         }) => {
             const url = `${this.endpoint}/openai/deployments/${params.model}/embeddings?api-version=${this.apiVersion}`
             
+            console.log(`🔗 Azure Embedding Request:`, {
+                url,
+                model: params.model,
+                inputType: typeof params.input,
+                inputLength: Array.isArray(params.input) ? params.input.length : params.input?.length,
+                inputPreview: Array.isArray(params.input) 
+                    ? params.input[0]?.substring(0, 50) + '...'
+                    : params.input?.substring(0, 50) + '...'
+            })
+            
+            const requestBody = {
+                input: params.input
+            }
+            
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'api-key': this.apiKey,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    input: params.input
-                })
+                body: JSON.stringify(requestBody)
             })
             
             if (!response.ok) {
-                const error = await response.json()
+                const errorText = await response.text()
+                console.error(`❌ Azure Embedding Error:`, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    url: url,
+                    responseBody: errorText,
+                    requestBody: requestBody
+                })
+                
+                let errorJson
+                try {
+                    errorJson = JSON.parse(errorText)
+                } catch {
+                    errorJson = { message: errorText }
+                }
+                
                 throw {
                     status: response.status,
-                    message: error.error?.message || 'Unknown error',
-                    error: error.error
+                    message: errorJson.error?.message || errorJson.message || response.statusText,
+                    error: errorJson.error || errorJson,
+                    requestBody,
+                    url
                 }
             }
             
-            return response.json()
+            const result = await response.json()
+            console.log(`✅ Azure Embedding Success:`, {
+                dataLength: result.data?.length,
+                firstEmbeddingDims: result.data?.[0]?.embedding?.length,
+                usage: result.usage
+            })
+            
+            return result
         }
     }
 }

@@ -1,267 +1,207 @@
-import embeddingService from "./embedding.service"
-import {
-    MAX_TOKEN, TEMPERATURE, TOP_P, CHAT_TABLE_NAME,
-    AZURE_LLM_DEPLOYMENT_NAME
-} from "../config/env"
-import azureClient from "../providers/azure-ai.connect"
-import { ChatMessage, ChatSession } from "../models/chat.model"
-import { dynamoClient } from "../providers/dynamodb.connect"
-import { PutCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb"
+import { IAIStrategy, IVectorStorageStrategy } from '../interfaces/IStrategy'
+import { ChatRepository } from '../repositories/chat.repository'
+import { AzureOpenAIStrategy } from '../strategies/azure-openai.strategy'
+import { PineconeStorageStrategy } from '../strategies/storage.strategies'
+import { ChatCommand, commandManager } from '../utils/commands'
+import { eventManager } from '../utils/event.manager'
+import { ChatMessage, ChatSession } from '../models/chat.model'
+import { ResponseBuilder } from '../utils/builders'
+import { ErrorFactory } from '../utils/pattern.factories'
 
 export class ChatService {
+    private aiStrategy: IAIStrategy
+    private vectorStorage: IVectorStorageStrategy
+    private chatRepository: ChatRepository
+    private errorFactory: ErrorFactory
+
+    constructor() {
+        this.aiStrategy = new AzureOpenAIStrategy()
+        this.vectorStorage = new PineconeStorageStrategy()
+        this.chatRepository = new ChatRepository()
+        this.errorFactory = new ErrorFactory()
+    }
+
     async *queryWithContext(question: string): AsyncIterable<string> {
         try {
-            // console.log('Generating embedding for user question...')
-            const questionEmbedding = await embeddingService.generateEmbedding(question)
-            
-            console.log('📚 Searching for similar document chunks...')
-            const similarChunks = await this.findSimilarChunks(questionEmbedding)
-            
-            if (similarChunks.length > 0) {
-                console.log(`✅ Found ${similarChunks.length} relevant document chunks`)
-                const context = similarChunks.map(chunk => chunk.metadata?.content || '').join('\n\n')
-                console.log(`📝 Built context with ${context.length} characters`)
-                console.log(`📄 Context preview: "${context.substring(0, 200)}..."`)
-                
-                const prompt = this.buildPrompt(question, context)
-                yield* this.invokeGPTStream(prompt)
-            } else {
-                console.log('ℹ️  No relevant documents found, answering with general knowledge')
-                const prompt = `Bạn là một AI assistant thông minh và hữu ích. Trả lời câu hỏi sau:\n\n${question}`
-                yield* this.invokeGPTStream(prompt)
+            await eventManager.notify('chat.message.sent', { 
+                question: question.substring(0, 100) + (question.length > 100 ? '...' : '')
+            })
+
+            // Create chat command and execute streaming
+            const chatCommand = new ChatCommand(
+                question,
+                this.aiStrategy,
+                this.vectorStorage
+            )
+
+            let responseLength = 0
+            for await (const chunk of chatCommand.executeStream()) {
+                responseLength += chunk.length
+                yield chunk
             }
+
+            await eventManager.notify('chat.message.received', { 
+                responseLength 
+            })
+
         } catch (error) {
             console.error('❌ Error in RAG processing:', error)
-            console.log('🚀 Falling back to direct GPT chat')
-            const prompt = `Bạn là một AI assistant thông minh và hữu ích. Trả lời câu hỏi sau:\n\n${question}`
-            yield* this.invokeGPTStream(prompt)
+            
+            // Fallback to direct AI response
+            try {
+                console.log('🚀 Falling back to direct AI chat')
+                const fallbackPrompt = `Bạn là một AI assistant thông minh và hữu ích. Trả lời câu hỏi sau:\n\n${question}`
+                
+                for await (const chunk of this.aiStrategy.streamResponse(fallbackPrompt)) {
+                    yield chunk
+                }
+            } catch (fallbackError) {
+                console.error('❌ Fallback also failed:', fallbackError)
+                yield `Xin lỗi, đã xảy ra lỗi khi xử lý câu hỏi của bạn: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }
         }
+    }
+
+    async findSimilarChunks(questionEmbedding: number[], topK: number = 5): Promise<Array<{id: string, score: number, metadata?: any}>> {
+        try {
+            return await this.vectorStorage.query(questionEmbedding, topK)
+        } catch (error) {
+            console.error('❌ Error finding similar chunks:', error)
+            return []
+        }
+    }
+
+    buildPrompt(question: string, context: string): string {
+        return `Dựa trên thông tin sau đây, hãy trả lời câu hỏi của người dùng một cách chính xác và chi tiết.
+
+Thông tin tham khảo:
+${context}
+
+Câu hỏi: ${question}
+
+Hướng dẫn trả lời:
+- Sử dụng thông tin từ tài liệu được cung cấp để trả lời
+- Nếu thông tin không đủ để trả lời hoàn chỉnh, hãy nói rõ điều đó
+- Trả lời bằng tiếng Việt
+- Cấu trúc câu trả lời rõ ràng, dễ hiểu
+
+Trả lời:`
     }
 
     async saveChatSession(userId: string, messages: ChatMessage[], sessionId?: string): Promise<void> {
-        const now = new Date().toISOString()
-        
-        if (sessionId) {
-            // Tìm session hiện tại để update
-            const existingSession = await this.findSessionBySessionId(userId, sessionId)
-            
-            if (existingSession) {
-                // Update session hiện tại
-                const command = {
-                    TableName: CHAT_TABLE_NAME,
-                    Item: {
-                        userId,
-                        timestamp: existingSession.timestamp, // Giữ nguyên timestamp cũ
-                        sessionId,
-                        messages,
-                        createdAt: existingSession.createdAt,
-                        updatedAt: now
-                    }
-                }
-                await dynamoClient.send(new PutCommand(command))
-                return
-            }
-        }
-        
-        // Tạo session mới
-        const timestamp = Date.now()
-        const newSessionId = sessionId || `session-${timestamp}`
-        const command = {
-            TableName: CHAT_TABLE_NAME,
-            Item: {
-                userId,
-                timestamp,
-                sessionId: newSessionId,
-                messages,
-                createdAt: now,
-                updatedAt: now
-            }
-        }
-        await dynamoClient.send(new PutCommand(command))
-    }
-
-    private async findSessionBySessionId(userId: string, sessionId: string): Promise<ChatSession | null> {
         try {
-            const command = {
-                TableName: CHAT_TABLE_NAME,
-                KeyConditionExpression: 'userId = :userId',
-                FilterExpression: 'sessionId = :sessionId',
-                ExpressionAttributeValues: {
-                    ':userId': userId,
-                    ':sessionId': sessionId
+            const finalSessionId = sessionId || `session_${Date.now()}`
+
+            if (sessionId) {
+                // Check if session exists and update
+                const existingSession = await this.chatRepository.findByUserAndSessionId(userId, sessionId)
+                
+                if (existingSession) {
+                    // Update existing session
+                    await this.chatRepository.update(`${userId}:${existingSession.timestamp}`, { 
+                        messages,
+                        updatedAt: new Date().toISOString()
+                    })
+                } else {
+                    throw this.errorFactory.createNotFoundError('Chat session', sessionId)
                 }
+            } else {
+                // Create new session
+                await this.chatRepository.create({
+                    userId,
+                    messages, 
+                    sessionId: finalSessionId
+                })
+
+                await eventManager.notify('chat.session.created', { 
+                    sessionId: finalSessionId,
+                    userId
+                })
             }
-            const result = await dynamoClient.send(new QueryCommand(command))
-            return result.Items && result.Items.length > 0 ? result.Items[0] as ChatSession : null
+
+            console.log(`💾 Saved chat session: ${finalSessionId} for user: ${userId}`)
+
         } catch (error) {
-            console.error('Error finding session:', error)
-            return null
+            console.error('❌ Error saving chat session:', error)
+            throw this.errorFactory.createInternalError('Failed to save chat session', error as Error)
         }
     }
 
     async getChatHistory(userId: string): Promise<ChatSession[]> {
-        const command = {
-            TableName: CHAT_TABLE_NAME,
-            KeyConditionExpression: 'userId = :userId',
-            ExpressionAttributeValues: {
-                ':userId': userId
-            },
-            ScanIndexForward: false  // Sort descending by timestamp (newest first)
+        try {
+            return await this.chatRepository.findByUser(userId)
+        } catch (error) {
+            console.error('❌ Error fetching chat history:', error)
+            throw this.errorFactory.createInternalError('Failed to fetch chat history', error as Error)
         }
-        const result = await dynamoClient.send(new QueryCommand(command))
-        return result.Items as ChatSession[] || []
     }
 
     async deleteChatSession(userId: string, sessionId: string): Promise<void> {
         try {
-            console.log('Service: Finding session to delete for user:', userId, 'session:', sessionId)
+            console.log(`🗑️ Deleting session ${sessionId} for user ${userId}`)
             
-            // Tìm session cần xóa
-            const sessionToDelete = await this.findSessionBySessionId(userId, sessionId)
-            
-            if (sessionToDelete) {
-                console.log('Service: Session found, deleting...', { 
-                    userId, 
-                    sessionId, 
-                    timestamp: sessionToDelete.timestamp 
-                })
-                
-                const command = {
-                    TableName: CHAT_TABLE_NAME,
-                    Key: {
-                        userId: userId,
-                        timestamp: sessionToDelete.timestamp
-                    }
-                }
-                await dynamoClient.send(new DeleteCommand(command))
-                console.log('Service: Session deleted successfully')
-            } else {
-                console.log('Service: Session not found to delete')
-            }
+            await this.chatRepository.deleteSession(userId, sessionId)
+
+            await eventManager.notify('chat.session.deleted', { 
+                sessionId,
+                userId
+            })
+
+            console.log(`✅ Successfully deleted session: ${sessionId}`)
+
         } catch (error) {
-            console.error('Error deleting chat session:', error)
-            throw error
+            console.error(`❌ Error deleting session ${sessionId}:`, error)
+            throw this.errorFactory.createInternalError('Failed to delete chat session', error as Error)
         }
     }
 
-    private async findSimilarChunks(queryEmbedding: number[]) {
+    async findSessionBySessionId(userId: string, sessionId: string): Promise<ChatSession | null> {
         try {
-            console.log(`🔍 Finding similar chunks, embedding dimensions: ${queryEmbedding.length}`)
-            
-            // Tăng số lượng chunks để capture nhiều thông tin hơn từ tất cả files
-            const similarDocuments = await embeddingService.querySimilarDocuments(
-                queryEmbedding, 
-                10  // Tăng lên 10 chunks để có thể lấy thông tin từ nhiều files
-            )
-            
-            console.log(`📚 Found ${similarDocuments.length} similar documents`)
-            
-            // Group by document để đảm bảo có thông tin từ nhiều files khác nhau
-            const documentGroups = new Map()
-            similarDocuments.forEach(match => {
-                const docId = match.metadata?.documentId
-                if (docId) {
-                    if (!documentGroups.has(docId)) {
-                        documentGroups.set(docId, [])
-                    }
-                    documentGroups.get(docId).push(match)
-                }
-            })
-            
-            console.log(`📁 Content found in ${documentGroups.size} different documents:`)
-            documentGroups.forEach((matches, docId) => {
-                console.log(`  - ${docId}: ${matches.length} chunks`)
-            })
-            
-            const results = similarDocuments.map(match => ({
-                score: match.score,
-                metadata: match.metadata
-            }))
-            
-            console.log(`🎯 Returning ${results.length} processed results from ${documentGroups.size} documents`)
-            return results
-            
+            return await this.chatRepository.findByUserAndSessionId(userId, sessionId)
         } catch (error) {
-            console.error('❌ Error finding similar chunks:', error)
-            return [] // Return empty array if query fails
+            console.error('❌ Error finding session:', error)
+            return null
         }
     }
 
-    private buildPrompt(question: string, context: string): string {
-        // Extract file names from context to show sources
-        const fileNames = new Set<string>()
-        const contextLines = context.split('\n\n')
-        
-        // Try to extract file info from metadata if available
-        contextLines.forEach(line => {
-            // This is a simple heuristic - in a real implementation you might pass file info separately
-            if (line.includes('uploads/')) {
-                const match = line.match(/uploads\/[^/]*\.([a-zA-Z]+)/)
-                if (match) {
-                    fileNames.add(match[0].split('/').pop() || 'unknown file')
-                }
-            }
-        })
-        
-        return `Bạn là một AI assistant thông minh và hữu ích. Hãy trả lời câu hỏi dựa trên thông tin được cung cấp trong phần Context từ các tài liệu đã upload.
-
-**Context từ các tài liệu đã upload:**
-${context}
-
-${fileNames.size > 0 ? `**Nguồn thông tin từ ${fileNames.size} file(s): ${Array.from(fileNames).join(', ')}**\n` : ''}
-
-**Câu hỏi:** ${question}
-
-**Hướng dẫn:**
-- Trả lời chính xác và chi tiết dựa trên thông tin trong Context ở trên
-- Nếu thông tin trải rộng trên nhiều tài liệu, hãy tổng hợp và trình bày một cách có hệ thống
-- Có thể trích dẫn thông tin cụ thể từ context khi cần thiết  
-- Nếu thông tin trong Context không đủ để trả lời hoàn toàn, hãy nói rõ điều đó và trả lời dựa trên những gì có
-- Trả lời bằng tiếng Việt một cách tự nhiên, rõ ràng và dễ hiểu
-- Nếu câu hỏi liên quan đến danh sách, số liệu cụ thể, thông tin chi tiết từ tài liệu thì ưu tiên sử dụng chính xác thông tin từ Context`
-    }
-
-
-
-
-
-    private async *invokeGPTStream(prompt: string): AsyncIterable<string> {
+    // Additional helper methods
+    
+    async getSessionCount(userId: string): Promise<number> {
         try {
-            if (!AZURE_LLM_DEPLOYMENT_NAME) {
-                throw new Error('AZURE_LLM_DEPLOYMENT_NAME is not configured')
-            }
-
-            const messages = [
-                {
-                    role: "system" as const,
-                    content: "Bạn là một AI assistant thông minh, chuyên nghiệp và hữu ích. Luôn trả lời chính xác, chi tiết và bằng tiếng Việt."
-                },
-                {
-                    role: "user" as const,
-                    content: prompt
-                }
-            ]
-
-            const stream = await azureClient.chat.completions.create({
-                model: AZURE_LLM_DEPLOYMENT_NAME!,
-                messages: messages,
-                max_completion_tokens: parseInt(MAX_TOKEN!) || 4000,
-                temperature: parseFloat(TEMPERATURE!) || 0.7,
-                top_p: parseFloat(TOP_P!) || 0.9,
-                stream: true
-            })
-
-            for await (const chunk of stream) {
-                const content = chunk.choices?.[0]?.delta?.content
-                if (content) {
-                    yield content
-                }
-            }
-            
-            console.log('GPT-4 stream completed')
+            const sessions = await this.chatRepository.findByUser(userId)
+            return sessions.length
         } catch (error) {
-            console.error('GPT-4 stream error:', error)
-            yield 'Xin lỗi, đã xảy ra lỗi khi tạo phản hồi. Vui lòng thử lại.'
+            console.error('❌ Error getting session count:', error)
+            return 0
         }
+    }
+
+    async clearAllSessions(userId: string): Promise<void> {
+        try {
+            const sessions = await this.chatRepository.findByUser(userId)
+            
+            for (const session of sessions) {
+                await this.chatRepository.delete(`${session.userId}:${session.timestamp}`)
+            }
+
+            console.log(`🗑️ Cleared all sessions for user: ${userId}`)
+        } catch (error) {
+            console.error('❌ Error clearing sessions:', error)
+            throw this.errorFactory.createInternalError('Failed to clear chat sessions', error as Error)
+        }
+    }
+
+    // Strategy pattern support - allow runtime strategy switching
+    
+    setAIStrategy(strategy: IAIStrategy): void {
+        this.aiStrategy = strategy
+        console.log('🔄 AI strategy updated')
+    }
+
+    setVectorStorage(storage: IVectorStorageStrategy): void {
+        this.vectorStorage = storage
+        console.log('🔄 Vector storage strategy updated')
     }
 }
+
+export default new ChatService()

@@ -37,7 +37,7 @@ const router = Router()
  *                   type: string
  */
 
-router.post('/', requireAuth, chatController.chatWithDocuments)
+router.post('/', requireAuth, chatController.chatWithDocuments.bind(chatController))
 /**
  * @swagger
  * /api/v1/chat/save:
@@ -72,7 +72,7 @@ router.post('/', requireAuth, chatController.chatWithDocuments)
  *                   type: string
  */
 
-router.post('/save', requireAuth, chatController.saveChat)
+router.post('/save', requireAuth, chatController.saveChat.bind(chatController))
 /**
  * @swagger
  * /api/v1/chat/history/{userId}:
@@ -114,7 +114,7 @@ router.post('/save', requireAuth, chatController.saveChat)
  */
 
 
-router.get('/history/:userId', requireAuth, chatController.getChatHistory)
+router.get('/history/:userId', requireAuth, chatController.getChatHistory.bind(chatController))
 
 /**
  * @swagger
@@ -139,7 +139,7 @@ router.get('/history/:userId', requireAuth, chatController.getChatHistory)
  *       200:
  *         description: Chat deleted successfully
  */
-router.delete('/delete/:userId/:sessionId', requireAuth, chatController.deleteChat)
+router.delete('/delete/:userId/:sessionId', requireAuth, chatController.deleteChatSession.bind(chatController))
 
 
 export default router

@@ -1,146 +1,295 @@
 import { Request, Response } from "express"
-import S3Service from "../services/uploads.service"
+import uploadsService from "../services/uploads.service"
 import embeddingService from "../services/embedding.service"
+import { ResponseBuilder } from "../utils/builders"
+import { ErrorFactory } from "../utils/pattern.factories"
 import statusCodes from "../constants/statusCodes"
 
-export class S3Controller {
+export class UploadsController {
+    private uploadsService: typeof uploadsService
+    private embeddingService: typeof embeddingService
+    private errorFactory: ErrorFactory
+
+    constructor() {
+        this.uploadsService = uploadsService
+        this.embeddingService = embeddingService
+        this.errorFactory = new ErrorFactory()
+    }
+
     async uploadMultipleFiles(req: Request, res: Response) {
         try {
             const files = req.files as Express.Multer.File[]
 
             if (!files || files.length === 0) {
-                return res.status(400).json({ message: 'No files provided' })
+                return ResponseBuilder.validation('No files provided')
+                    .send(res)
             }
 
-            const uploadData = files.map(file => {
-                // Create ASCII-safe filename to avoid encoding issues
-                const sanitizedName = Buffer.from(file.originalname, 'utf8')
-                    .toString('ascii', 0, Buffer.byteLength(file.originalname, 'utf8'))
-                    .replace(/[^\w\s.-]/g, '_') // Replace special chars with underscore
-                    .replace(/\s+/g, '_') // Replace spaces with underscore
+            console.log(`📤 Uploading ${files.length} files...`)
+
+            // Prepare upload data
+            const uploadDataArray = files.map(file => {
+                const key = this.uploadsService.generateFileKey(file.originalname)
                 
-                return {
-                    key: `uploads/${Date.now()}-${sanitizedName}`,
-                    body: file.buffer,
-                    contentType: file.mimetype,
-                    originalName: file.originalname
-                }
+                return this.uploadsService.constructor.createUploadData(
+                    key,
+                    file.buffer,
+                    file.mimetype,
+                    file.originalname
+                )
             })
 
-            const results = await S3Service.uploadMultipleFiles(uploadData)
+            // Upload all files
+            const uploadResults = await this.uploadsService.uploadMultipleFiles(uploadDataArray)
 
             // Automatically trigger embedding processing for uploaded files
-            // console.log('Processing file embeddings automatically...')
+            console.log('🔄 Auto-processing embeddings for uploaded files...')
+            
             try {
-                const fileUrls = results.map((result, index) => ({
+                const fileUrls = uploadResults.map(result => ({
                     key: result.key,
                     url: result.url,
-                    originalName: uploadData[index].originalName
+                    originalName: result.originalName
                 }))
 
-                // Process embeddings in background
-                embeddingService.processMultipleFilesDirect(fileUrls).then(() => {
-                    // console.log('Embedding processing completed')
-                }).catch((error) => {
-                    console.error('❌ Embedding processing failed:', error)
-                })
+                // Process embeddings in background - don't wait for completion
+                this.embeddingService.processMultipleFilesDirect(fileUrls)
+                    .then(() => {
+                        console.log('✅ Background embedding processing completed')
+                    })
+                    .catch((error) => {
+                        console.error('❌ Background embedding processing failed:', error)
+                    })
                 
             } catch (embeddingError) {
-                console.error('⚠️  Embedding processing failed but upload succeeded:', embeddingError)
+                console.error('⚠️ Embedding processing failed but upload succeeded:', embeddingError)
                 // Don't fail the upload if embedding fails
             }
 
-            res.json({
-                message: `${files.length} files uploaded successfully and are being processed for AI search`,
-                files: results.map((result, index) => ({
-                    ...result,
-                    originalName: uploadData[index].originalName,
-                    sanitizedKey: result.key
-                })),
-                note: "Files are being processed in the background. They will be available for chat in a few moments.",
-                autoEmbedding: true
-            })
+            // Return success response
+            ResponseBuilder.success({
+                files: uploadResults,
+                count: uploadResults.length,
+                embeddingStatus: 'processing'
+            }, `Successfully uploaded ${uploadResults.length} files`)
+                .setStatus(statusCodes.CREATED)
+                .send(res)
+
         } catch (error) {
-            console.error('Error in uploadFile controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
-                message: 'Upload failed', 
-                error: error instanceof Error ? error.message : 'Unknown error'
-            })
+            console.error('❌ Error uploading files:', error)
+            
+            ResponseBuilder.error('Failed to upload files')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .setData({ error: error instanceof Error ? error.message : 'Unknown error' })
+                .send(res)
         }
     }
 
-    // async getUploadUrl(req: Request, res: Response) {
-    //     try {
-    //         const { filename } = req.body
-    //         if (!filename ) {
-    //             return res.status(statusCodes.BAD_REQUEST).json({ message: 'filename and contentType are required' })
-    //         }
-
-    //         const key = `uploads/${Date.now()}-${filename}`
-    //         const uploadUrl = await S3Service.getPresignedUploadUrl(key)
-    //         const accessUrl = S3Service.getS3Url(key)
-
-    //         res.status(statusCodes.OK).json({
-    //             message: 'Presigned URL generated successfully',
-    //             uploadUrl,
-    //             accessUrl,
-    //             key
-    //         })
-    //     } catch (error) {
-    //         console.error('Error in getUploadUrl controller:', error)
-    //         res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ message: 'Failed to generate presigned URL', error })
-    //     }
-    // }
-
-    async listFiles(req: Request, res: Response) {
+    async uploadSingleFile(req: Request, res: Response) {
         try {
-            const files = await S3Service.listFiles()
-            res.status(statusCodes.OK).json({
-                message: 'Files listed successfully',
-                files
-            })
+            const file = req.file as Express.Multer.File
+
+            if (!file) {
+                return ResponseBuilder.validation('No file provided')
+                    .send(res)
+            }
+
+            console.log(`📤 Uploading file: ${file.originalname}`)
+
+            // Generate unique key and upload
+            const key = this.uploadsService.generateFileKey(file.originalname)
+            const url = await this.uploadsService.uploadFile(key, file.buffer, file.mimetype)
+
+            // Auto-process embedding
+            try {
+                this.embeddingService.processMultipleFilesDirect([{
+                    key,
+                    url,
+                    originalName: file.originalname
+                }]).catch(error => {
+                    console.error('❌ Background embedding failed:', error)
+                })
+            } catch (embeddingError) {
+                console.error('⚠️ Embedding processing failed but upload succeeded:', embeddingError)
+            }
+
+            ResponseBuilder.success({
+                key,
+                url,
+                originalName: file.originalname,
+                embeddingStatus: 'processing'
+            }, 'File uploaded successfully')
+                .setStatus(statusCodes.CREATED)
+                .send(res)
+
         } catch (error) {
-            console.error('Error in listFiles controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
-                message: 'Failed to list files', 
-                error: error instanceof Error ? error.message : 'Unknown error'
-            })
+            console.error('❌ Error uploading file:', error)
+            
+            ResponseBuilder.error('Failed to upload file')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .send(res)
         }
     }
 
     async getFileUrl(req: Request, res: Response) {
         try {
             const { key } = req.params
-            const url = await S3Service.getPresignedDownloadUrl(key)
-            res.status(statusCodes.OK).json({
-                message: 'Presigned download URL generated successfully',
+
+            if (!key) {
+                return ResponseBuilder.validation('File key is required')
+                    .send(res)
+            }
+
+            // Check if file exists
+            const exists = await this.uploadsService.fileExists(key)
+            
+            if (!exists) {
+                return ResponseBuilder.notFound('File', key)
+                    .send(res)
+            }
+
+            const url = this.uploadsService.getS3Url(key)
+
+            ResponseBuilder.success({
+                key,
                 url
-            })
+            }, 'File URL retrieved successfully')
+                .send(res)
+
         } catch (error) {
-            console.error('Error in getFileUrl controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
-                message: 'Failed to get file URL', 
-                error: error instanceof Error ? error.message : 'Unknown error'
-            })
+            console.error('❌ Error getting file URL:', error)
+            
+            ResponseBuilder.error('Failed to get file URL')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .send(res)
         }
     }
 
     async deleteFile(req: Request, res: Response) {
         try {
             const { key } = req.params
-            await S3Service.deleteFile(key)
-            res.status(statusCodes.OK).json({
-                message: 'File deleted successfully'
-            })
+
+            if (!key) {
+                return ResponseBuilder.validation('File key is required')
+                    .send(res)
+            }
+
+            // Check if file exists
+            const exists = await this.uploadsService.fileExists(key)
+            
+            if (!exists) {
+                return ResponseBuilder.notFound('File', key)
+                    .send(res)
+            }
+
+            // Delete file and its embeddings
+            await this.uploadsService.deleteFile(key)
+            
+            // Also delete document embeddings
+            try {
+                await this.embeddingService.deleteDocument(key)
+            } catch (embeddingError) {
+                console.warn('⚠️ Failed to delete embeddings for file:', key, embeddingError)
+                // Don't fail the file deletion if embedding deletion fails
+            }
+
+            ResponseBuilder.success({
+                key
+            }, 'File deleted successfully')
+                .send(res)
+
         } catch (error) {
-            console.error('Error in deleteFile controller:', error)
-            res.status(statusCodes.INTERNAL_SERVER_ERROR).json({ 
-                message: 'Failed to delete file', 
-                error: error instanceof Error ? error.message : 'Unknown error'
-            })
+            console.error('❌ Error deleting file:', error)
+            
+            ResponseBuilder.error('Failed to delete file')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .send(res)
+        }
+    }
+
+    async downloadFile(req: Request, res: Response) {
+        try {
+            const { key } = req.params
+
+            if (!key) {
+                return ResponseBuilder.validation('File key is required')
+                    .send(res)
+            }
+
+            // Check if file exists
+            const exists = await this.uploadsService.fileExists(key)
+            
+            if (!exists) {
+                return ResponseBuilder.notFound('File', key)
+                    .send(res)
+            }
+
+            // Download file
+            const buffer = await this.uploadsService.downloadFile(key)
+
+            // Extract filename from key
+            const filename = key.split('/').pop() || 'download'
+
+            // Set appropriate headers
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+            res.setHeader('Content-Type', 'application/octet-stream')
+            res.setHeader('Content-Length', buffer.length.toString())
+
+            // Send file buffer
+            res.send(buffer)
+
+        } catch (error) {
+            console.error('❌ Error downloading file:', error)
+            
+            if (!res.headersSent) {
+                ResponseBuilder.error('Failed to download file')
+                    .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                    .send(res)
+            }
+        }
+    }
+
+    async listFiles(req: Request, res: Response) {
+        try {
+            // This would require implementing a list method in the storage strategy
+            // For now, we'll return a placeholder response
+            
+            ResponseBuilder.success({
+                files: [],
+                message: 'List files feature not implemented yet'
+            }, 'Files list retrieved')
+                .send(res)
+
+        } catch (error) {
+            console.error('❌ Error listing files:', error)
+            
+            ResponseBuilder.error('Failed to list files')
+                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+                .send(res)
+        }
+    }
+
+    // Health check for upload service
+    async healthCheck(req: Request, res: Response) {
+        try {
+            // Test file existence check (using a known non-existent file)
+            const testKey = 'health-check-non-existent-file'
+            await this.uploadsService.fileExists(testKey)
+
+            ResponseBuilder.success({
+                status: 'healthy',
+                service: 'uploads'
+            }, 'Upload service is healthy')
+                .send(res)
+
+        } catch (error) {
+            console.error('❌ Upload service health check failed:', error)
+            
+            ResponseBuilder.error('Upload service is unhealthy')
+                .setStatus(statusCodes.SERVICE_UNAVAILABLE || 503)
+                .send(res)
         }
     }
 }
 
-
-export default new S3Controller()
+export default new UploadsController()

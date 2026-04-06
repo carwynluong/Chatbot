@@ -44,7 +44,7 @@ const upload = multer({ storage: multer.memoryStorage() })
  *                       url:
  *                         type: string
  */
-router.post('/uploads', requireAuth, upload.array('file'), S3Controller.uploadMultipleFiles )
+router.post('/uploads', requireAuth, upload.array('file'), S3Controller.uploadMultipleFiles.bind(S3Controller))
 // /**
 //  * @swagger
 //  * /api/v1/s3/upload-url:
@@ -79,7 +79,7 @@ router.post('/uploads', requireAuth, upload.array('file'), S3Controller.uploadMu
  *       200:
  *         description: List of files
  */
-router.get('/list-object', requireAuth, S3Controller.listFiles)
+router.get('/list-object', requireAuth, S3Controller.listFiles.bind(S3Controller))
 /**
  * @swagger
  * /api/v1/s3/uploads/{key}:
@@ -112,8 +112,8 @@ router.get('/list-object', requireAuth, S3Controller.listFiles)
  *       200:
  *         description: File deleted successfully
  */
-router.get('/uploads/:key', requireAuth, S3Controller.getFileUrl)
-router.delete('/uploads/:key', requireAuth, S3Controller.deleteFile)
+router.get('/uploads/:key', requireAuth, S3Controller.getFileUrl.bind(S3Controller))
+router.delete('/uploads/:key', requireAuth, S3Controller.deleteFile.bind(S3Controller))
 
 
 export default router

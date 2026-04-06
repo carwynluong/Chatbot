@@ -1,4 +1,4 @@
-import { processFileEmbedding, initializePinecone, getDocuments, testEmbedding, queryPinecone, testSearch } from '../controllers/embedding.controller'
+import embeddingController from '../controllers/embedding.controller'
 import { requireAuth } from '../middleware/auth.middleware'
 import { Router } from 'express'
 
@@ -27,7 +27,7 @@ const router = Router()
  *       200:
  *         description: Files processed successfully
  */
-router.post('/process', requireAuth, processFileEmbedding)
+router.post('/process', requireAuth, embeddingController.processFileEmbedding.bind(embeddingController))
 
 // Debug route - no auth
 router.post('/debug-process', (req, res) => {
@@ -70,7 +70,7 @@ router.get('/test-token', (req, res) => {
  *       500:
  *         description: Pinecone connection failed
  */
-router.get('/health', requireAuth, initializePinecone)
+router.get('/health', requireAuth, embeddingController.healthCheck.bind(embeddingController))
 
 // Temporary debug route - remove after fixing auth issue
 router.post('/debug', (req, res) => {
@@ -90,9 +90,8 @@ router.post('/debug', (req, res) => {
 })
 
 // Debug routes for testing embedding pipeline
-router.get('/documents', getDocuments)
-router.post('/test', testEmbedding)  
-router.post('/query', queryPinecone)
-router.post('/search', testSearch)
+router.get('/status', embeddingController.getProcessingStatus.bind(embeddingController))
+router.post('/query', embeddingController.queryEmbeddings.bind(embeddingController))
+router.delete('/document/:id', embeddingController.deleteDocument.bind(embeddingController))
 
 export default router

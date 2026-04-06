@@ -1,26 +1,31 @@
-import { PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb"
-import { dynamoClient } from "../providers/dynamodb.connect"
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import { User, CreateUserInput } from "../models/user.model"
-import { JWT_SECRET, USER_TABLE_NAME, REFRESH_TOKEN_SECRET } from "../config/env"
-import { AuthError, ConflictError } from '../utils/error.utils'
-// import { CreateTableCommand, DescribeTableCommand } from "@aws-sdk/client-dynamodb"
-
+import { JWT_SECRET, REFRESH_TOKEN_SECRET } from "../config/env"
+import { UserRepository } from "../repositories/user.repository"
+import { ResponseBuilder } from "../utils/builders"
+import { ErrorFactory } from "../utils/pattern.factories"
 
 export class AuthService {
+    private userRepository: UserRepository
+    private errorFactory: ErrorFactory
+
+    constructor() {
+        this.userRepository = new UserRepository()
+        this.errorFactory = new ErrorFactory()
+    }
 
     private generateTokens(user: Omit<User, 'password'>){
         const accessToken = jwt.sign(
             { id: user.id, email: user.email, role: user.role },
             JWT_SECRET!,
-            { expiresIn: '1d' } // Access token hết hạn sau 15 phút
+            { expiresIn: '1d' }
         )
 
         const refreshToken = jwt.sign(
             { id: user.id, email: user.email },
             REFRESH_TOKEN_SECRET!,
-            { expiresIn: '7d' } // Refresh token hết hạn sau 7 ngày
+            { expiresIn: '7d' }
         )
 
         return { accessToken, refreshToken }
@@ -30,121 +35,99 @@ export class AuthService {
         const { name, email, password, role = 'user' } = userData
 
         // Check if user already exists
-        const existingUser = await this.getUserByEmail(email)
+        const existingUser = await this.userRepository.findByEmail(email)
         if (existingUser) {
-            throw new ConflictError('User already exists')
+            throw this.errorFactory.createValidationError('User already exists', 'email')
         }
 
         const hashedPassword = await bcrypt.hash(password, 10)
-        const now = new Date().toISOString()
-        const newUser: User = {
-            id: `user_${Date.now()}`,
+        const userInput: CreateUserInput = {
             name,
             email,
             password: hashedPassword,
-            role,
-            createdAt: now,
-            updatedAt: now
+            role
         }
 
-        await dynamoClient.send(new PutCommand({
-            TableName: USER_TABLE_NAME,
-            Item: newUser
-        }))
-
+        const newUser = await this.userRepository.create(userInput)
         
-        const { password: _, refreshToken: __, ...userWithoutPassword } = newUser
-        const { accessToken, refreshToken } = this.generateTokens(userWithoutPassword)
+        // Create user object without password for response
+        const userWithoutPassword: Omit<User, 'password'> = {
+            id: newUser.id,
+            name: newUser.name,
+            email: newUser.email,
+            role: newUser.role,
+            createdAt: newUser.createdAt,
+            updatedAt: newUser.updatedAt
+        }
 
-        // Lưu refresh token vào database
-        await this.saveRefreshToken(newUser.id, refreshToken)
+        const tokens = this.generateTokens(userWithoutPassword)
 
-        return { user: userWithoutPassword, accessToken, refreshToken }
+        // Save refresh token
+        await this.userRepository.updateRefreshToken(newUser.id, tokens.refreshToken)
+
+        return { user: userWithoutPassword, ...tokens }
     }
 
     async login(email: string, password: string): Promise<{ user: Omit<User, 'password'>, accessToken: string, refreshToken: string }> {
-        const user = await this.getUserByEmail(email)
+        const user = await this.userRepository.findByEmail(email)
         if (!user) {
-            throw new AuthError('Invalid email or password')
+            throw this.errorFactory.createAuthenticationError('Invalid email or password')
         }
+
         const isValidPassword = await bcrypt.compare(password, user.password)
         if (!isValidPassword) {
-            throw new AuthError('Invalid email or password')
+            throw this.errorFactory.createAuthenticationError('Invalid email or password')
         }
         
-        const { password: _, refreshToken: __, ...userWithoutPassword } = user
-        const { accessToken, refreshToken } = this.generateTokens(userWithoutPassword)
+        const userWithoutPassword: Omit<User, 'password'> = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        }
 
-        // Lưu refresh token vào database
-        await this.saveRefreshToken(user.id, refreshToken)
+        const tokens = this.generateTokens(userWithoutPassword)
 
-        return { user: userWithoutPassword, accessToken, refreshToken }
+        // Save refresh token
+        await this.userRepository.updateRefreshToken(user.id, tokens.refreshToken)
+
+        return { user: userWithoutPassword, ...tokens }
     }
 
     async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string, refreshToken: string }> {
         try {
             const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET!) as any
 
-            // Kiểm tra refresh token có tồn tại trong database
-            const user = await this.getUserById(decoded.id)
+            // Check if refresh token exists in database
+            const user = await this.userRepository.findById(decoded.id)
             if (!user || user.refreshToken !== refreshToken) {
-                throw new AuthError('Invalid refresh token')
+                throw this.errorFactory.createAuthenticationError('Invalid refresh token')
             }
 
-            const { password: _, refreshToken: __, ...userWithoutPassword } = user
+            const userWithoutPassword: Omit<User, 'password'> = {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                createdAt: user.createdAt,
+                updatedAt: user.updatedAt
+            }
+
             const tokens = this.generateTokens(userWithoutPassword)
 
-            await this.saveRefreshToken(user.id, tokens.refreshToken)
+            await this.userRepository.updateRefreshToken(user.id, tokens.refreshToken)
 
             return tokens
 
         } catch (error) {
-            throw new AuthError('Invalid or expired refresh token')
+            throw this.errorFactory.createAuthenticationError('Invalid or expired refresh token')
         }
     }
 
-    private async saveRefreshToken(userId: string, refreshToken: string){
-        await dynamoClient.send(new UpdateCommand({
-            TableName: USER_TABLE_NAME,
-            Key: { id: userId },
-            UpdateExpression: 'SET refreshToken = :refreshToken, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':refreshToken': refreshToken,
-                ':updatedAt': new Date().toISOString()
-            }
-        }))
-    }
-
-    private async getUserById(id: string): Promise<User | null>{
-        const data = await dynamoClient.send(new QueryCommand({
-            TableName: USER_TABLE_NAME,
-            KeyConditionExpression: 'id = :id',
-            ExpressionAttributeValues: { ':id': id }
-        }))
-        return data.Items?.[0] as User || null
-    }
-
-
-    private async getUserByEmail(email: string): Promise<User | null> {
-        const result = await dynamoClient.send(new QueryCommand({
-            TableName: USER_TABLE_NAME,
-            IndexName: 'email-index',
-            KeyConditionExpression: 'email = :email',
-            ExpressionAttributeValues: { ':email': email }
-        }))
-
-        return result.Items?.[0] as User || null
-    }
-
-    async logout(userId: string) {
-        await dynamoClient.send(new UpdateCommand({
-            TableName: USER_TABLE_NAME,
-            Key: { id: userId },
-            UpdateExpression: 'REMOVE refreshToken SET updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':updatedAt': new Date().toISOString()
-            }
-        }))
+    async logout(userId: string): Promise<void> {
+        await this.userRepository.update(userId, { refreshToken: undefined })
     }
 }
 
