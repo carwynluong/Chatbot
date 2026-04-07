@@ -12,7 +12,8 @@ export class PDFProcessor implements IDocumentProcessor {
             const pdfParser = new PDFParser()
             
             pdfParser.on('pdfParser_dataError', (error) => {
-                reject(new Error(`PDF parsing error: ${error.parserError}`))
+                const errorMessage = (error as any).parserError || error
+                reject(new Error(`PDF parsing error: ${errorMessage}`))
             })
             
             pdfParser.on('pdfParser_dataReady', (pdfData) => {
@@ -86,7 +87,7 @@ export class DefaultProcessor implements IDocumentProcessor {
             // Try to decode as UTF-8 text
             return buffer.toString('utf-8')
         } catch (error) {
-            throw new Error(`Unsupported file type: ${fileType}. Unable to extract text.`)
+            throw new Error(`Unsupported file type: Unable to extract text.`)
         }
     }
 

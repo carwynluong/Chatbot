@@ -218,6 +218,73 @@ export class UploadsService {
             }
         })
     }
+
+    // New methods for S3 file management
+    async listS3Objects(prefix: string = 'uploads'): Promise<Array<{key: string, size: number, lastModified: Date, url: string}>> {
+        try {
+            console.log(`📄 Listing S3 objects with prefix: ${prefix}`)
+            
+            const objects = await this.fileStorage.listObjects(prefix)
+            
+            return objects.map(obj => ({
+                ...obj,
+                url: this.getS3Url(obj.key)
+            }))
+            
+        } catch (error) {
+            console.error('❌ Error listing S3 objects:', error)
+            throw this.errorFactory.createInternalError(
+                `Failed to list S3 objects: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                error as Error
+            )
+        }
+    }
+
+    async compareS3WithDatabase(prefix: string = 'uploads'): Promise<{
+        s3Only: Array<{key: string, size: number, lastModified: Date, url: string}>,
+        dbOnly: any[],
+        synchronized: any[]
+    }> {
+        try {
+            console.log('🔍 Comparing S3 files with database records...')
+            
+            // Get files from S3
+            const s3Files = await this.listS3Objects(prefix)
+            console.log(`📄 Found ${s3Files.length} files in S3`)
+            
+            // Get documents from database
+            const { default: documentService } = await import('./document.service')
+            const dbDocuments = await documentService.getAllDocuments()
+            console.log(`📊 Found ${dbDocuments.length} documents in database`)
+            
+            // Create maps for comparison
+            const s3Map = new Map(s3Files.map(file => [file.key, file]))
+            const dbMap = new Map(dbDocuments.map(doc => [doc.s3Key || doc.id, doc]))
+            
+            // Find files only in S3
+            const s3Only = s3Files.filter(file => !dbMap.has(file.key))
+            
+            // Find files only in DB
+            const dbOnly = dbDocuments.filter(doc => !s3Map.has(doc.s3Key || doc.id))
+            
+            // Find synchronized files
+            const synchronized = dbDocuments.filter(doc => s3Map.has(doc.s3Key || doc.id))
+            
+            console.log(`📊 Comparison results:`)
+            console.log(`  - S3 only: ${s3Only.length}`)
+            console.log(`  - DB only: ${dbOnly.length}`)
+            console.log(`  - Synchronized: ${synchronized.length}`)
+            
+            return { s3Only, dbOnly, synchronized }
+            
+        } catch (error) {
+            console.error('❌ Error comparing S3 with database:', error)
+            throw this.errorFactory.createInternalError(
+                `Failed to compare S3 with database: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                error as Error
+            )
+        }
+    }
 }
 
 export default new UploadsService()

@@ -1,5 +1,5 @@
 import { IFileStorageStrategy, IVectorStorageStrategy } from "../interfaces/IStrategy"
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3"
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3"
 import s3Service from "../providers/s3.connect"
 import { S3_BUCKET_NAME, AWS_REGION } from "../config/env"
 import pineconeService from "../providers/pinecone.connect"
@@ -77,6 +77,27 @@ export class S3StorageStrategy implements IFileStorageStrategy {
             return true
         } catch {
             return false
+        }
+    }
+
+    async listObjects(prefix?: string): Promise<Array<{key: string, size: number, lastModified: Date}>> {
+        try {
+            const command = new ListObjectsV2Command({
+                Bucket: this.bucketName,
+                Prefix: prefix
+            })
+
+            const response = await s3Service.getS3Client().send(command)
+            const objects = response.Contents || []
+
+            return objects.map(obj => ({
+                key: obj.Key!,
+                size: obj.Size || 0,
+                lastModified: obj.LastModified || new Date()
+            }))
+        } catch (error) {
+            console.error('S3 ListObjects error:', error)
+            throw new Error(`Failed to list objects: ${error instanceof Error ? error.message : 'Unknown error'}`)
         }
     }
 }

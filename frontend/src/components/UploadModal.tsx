@@ -3,7 +3,7 @@ import { Dialog, Transition } from '@headlessui/react'
 import { XMarkIcon, CloudArrowUpIcon, DocumentIcon, TrashIcon } from '@heroicons/react/24/outline'
 import UploadGenAIAPI from '../api/apiUploadGenAI'
 import ApiEmbeddingAI from '../api/apiEmbeddingAI'
-import type { FileItem } from '../interfaces/upload.interface'
+import type { FileItem, ListFilesResponse } from '../interfaces/upload.interface'
 import toast from 'react-hot-toast'
 
 interface UploadModalProps {
@@ -18,6 +18,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [embeddedFiles, setEmbeddedFiles] = useState<Set<string>>(new Set())
   const [dragActive, setDragActive] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -26,16 +27,25 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
   }, [isOpen])
 
   const loadFiles = async () => {
+    setIsLoading(true)
     try {
       const res = await UploadGenAIAPI.listFiles()
-      const fileWithEmbeding = res.files.map(file => ({
+      
+      const fileList = res.files || []
+      const fileWithEmbedding = fileList.map(file => ({
         ...file,
-        name: file.key.split('/').pop() || file.key,
-        isEmbedded: embeddedFiles.has(file.key),
+        name: file.name || file.key.split('/').pop() || file.key,
+        isEmbedded: file.isEmbedded || false,
       }))
-      setFiles(fileWithEmbeding)
+      
+      setFiles(fileWithEmbedding)
+      console.log(`Loaded ${fileWithEmbedding.length} files, ${fileWithEmbedding.filter(f => f.isEmbedded).length} embedded`)
+      
     } catch (error) {
+      console.error('Error loading files:', error)
       toast.error('Không thể tải danh sách file')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -225,7 +235,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6">
                   <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
-                    Quản lý tài liệu
+                    Quản lý tài liệu S3
                   </Dialog.Title>
                   <button
                     onClick={onClose}
@@ -301,10 +311,21 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
 
                 {/* File List */}
                 <div className="max-h-96 overflow-y-auto">
-                  {files.length === 0 ? (
-                    <p className="text-center text-gray-500 py-8">Chưa có file nào được tải lên</p>
+                  {isLoading ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                      <p className="text-gray-500 mt-2">Đang tải...</p>
+                    </div>
+                  ) : files.length === 0 ? (
+                    <p className="text-center text-gray-500 py-8">
+                      Chưa có file nào trên S3
+                    </p>
                   ) : (
                     <div className="space-y-2">
+                      <div className="text-sm text-gray-600 mb-4 flex justify-between">
+                        <span>Tổng cộng: {files.length} files</span>
+                        <span>Đã embedded: {files.filter(f => f.isEmbedded).length} files</span>
+                      </div>
                       {files.map((file) => (
                         <div
                           key={file.key}
@@ -331,6 +352,11 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
                               {file.isEmbedded && (
                                 <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
                                   Đã embed
+                                </span>
+                              )}
+                              {!file.isEmbedded && (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                  Chưa embed
                                 </span>
                               )}
                             </p>

@@ -11,19 +11,21 @@ export interface MultipleUploadResponse {
 
 export interface ListFilesResponse {
   message: string;
-  files: {
-    key: string;
-    size: number;
-    url: string;
-    isEmbedded?: boolean;
-    // Additional metadata
-    fileName?: string;
-    fileType?: string;
-    status?: string;
-    totalChunks?: number;
-    createdAt?: string;
-    updatedAt?: string;
-  }[];
+  files: FileItem[];
+  count: number;
+  embedded: number;
+}
+
+export interface FileItem {
+  key: string;
+  size: number;
+  url: string;
+  name: string;
+  isEmbedded: boolean;
+  status?: string;
+  fileType?: string;
+  totalChunks?: number;
+  lastModified: string;
 }
 
 export interface FileUrlResponse {

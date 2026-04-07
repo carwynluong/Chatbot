@@ -27,4 +27,7 @@ export interface CreateDocumentInput {
     fileType: string
     s3Key: string
     s3Url: string
+    status?: 'processing' | 'embedded' | 'error'
+    totalChunks?: number
+    errorMessage?: string
 }

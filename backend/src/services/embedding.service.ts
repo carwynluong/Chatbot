@@ -70,6 +70,25 @@ export class EmbeddingService {
                 status: r.status,
                 error: r.status === 'rejected' ? r.reason : undefined 
             })))
+
+            // Check for failures and throw error if any file failed
+            const failures = results.filter(r => r.status === 'rejected')
+            if (failures.length > 0) {
+                const failedFiles = failures.map((f, i) => {
+                    const originalIndex = results.indexOf(f)
+                    return {
+                        file: fileUrls[originalIndex]?.key || 'unknown',
+                        error: f.reason
+                    }
+                })
+                
+                console.error(`❌ [SERVICE] ${failures.length}/${fileUrls.length} files failed:`, failedFiles)
+                
+                const errorMessage = `Failed to process ${failures.length} out of ${fileUrls.length} files`
+                throw new Error(errorMessage)
+            }
+            
+            console.log(`✅ [SERVICE] All ${fileUrls.length} files processed successfully`)
         } catch (error) {
             console.error('❌ [SERVICE] processMultipleFilesDirect error:', error)
             throw error
@@ -95,23 +114,7 @@ export class EmbeddingService {
 
             console.log(`📄 Processing: ${fileUrl.originalName || fileUrl.key}`)
 
-            // Create document metadata
-            const fileExtension = path.extname(fileUrl.originalName || fileUrl.key).toLowerCase().substring(1)
-            console.log(`🔧 File extension detected: ${fileExtension}`)
-            
-            const documentInput = {
-                fileName: fileUrl.originalName || fileUrl.key,
-                fileSize: 0,
-                fileType: fileExtension,
-                s3Key: fileUrl.key,
-                s3Url: fileUrl.url
-            }
-            console.log(`📝 Document input prepared:`, documentInput)
-
-            const document = await this.documentRepository.create(documentInput)
-            console.log(`✅ Document created in database:`, document.id)
-
-            // Download file content from S3 using credentials
+            // Download file content from S3 first - Don't create DB record yet
             console.log(`📥 Downloading file from S3: ${fileUrl.key}`)
             const getObjectCommand = new GetObjectCommand({
                 Bucket: S3_BUCKET_NAME,
@@ -138,7 +141,10 @@ export class EmbeddingService {
             console.log(`✅ Downloaded ${fileBuffer.length} bytes from S3`)
 
             // Process document based on type 
+            const fileExtension = path.extname(fileUrl.originalName || fileUrl.key).toLowerCase().substring(1)
+            console.log(`🔧 File extension detected: ${fileExtension}`)
             console.log(`🏭 Creating document processor for: ${fileExtension}`)
+            
             const processor = this.documentProcessor.createProcessor(fileExtension)
             console.log(`📄 Extracting text from buffer...`)
             const textContent = await processor.extractText(fileBuffer)
@@ -149,7 +155,7 @@ export class EmbeddingService {
                 throw new Error('No text content extracted from file')
             }
 
-            // Create and execute processing command
+            // Create and execute processing command - this is where embedding happens
             console.log(`🚛 Creating ProcessEmbeddingCommand...`)
             const processingCommand = new ProcessEmbeddingCommand(
                 fileUrl.key,
@@ -163,7 +169,8 @@ export class EmbeddingService {
             await commandManager.execute(processingCommand)
             console.log(`✅ ProcessEmbeddingCommand completed successfully`)
 
-            // Update document status
+            // ONLY NOW create document in database after successful embedding
+            console.log(`💾 Embedding successful - creating database record...`)
             const { RecursiveCharacterTextSplitter } = await import('langchain/text_splitter')
             const textSplitter = new RecursiveCharacterTextSplitter({
                 chunkSize: 1000,
@@ -172,8 +179,24 @@ export class EmbeddingService {
             const chunks = await textSplitter.splitText(textContent)
             console.log(`📊 Text split into ${chunks.length} chunks`)
             
-            await this.documentRepository.updateStatus(fileUrl.key, 'embedded', chunks.length)
-            console.log(`📈 Database updated: status=embedded, chunks=${chunks.length}`)
+            const documentInput = {
+                fileName: fileUrl.originalName || fileUrl.key,
+                fileSize: fileBuffer.length,
+                fileType: fileExtension,
+                s3Key: fileUrl.key,
+                s3Url: fileUrl.url,
+                status: 'embedded' as const,
+                totalChunks: chunks.length
+            }
+            console.log(`📝 Creating document record with embedded status:`, documentInput)
+
+            const document = await this.documentRepository.create(documentInput)
+            console.log(`✅ Document created in database with ID: ${document.id}`)
+
+            await eventManager.notify('embedding.processing.completed', { 
+                documentId: fileUrl.key,
+                totalChunks: chunks.length
+            })
 
             console.log(`✅ Successfully processed: ${fileUrl.originalName || fileUrl.key}`)
 
@@ -184,17 +207,16 @@ export class EmbeddingService {
                 stack: error instanceof Error ? error.stack : undefined
             })
             
-            await this.documentRepository.updateStatus(
-                fileUrl.key, 
-                'error', 
-                0, 
-                error instanceof Error ? error.message : 'Unknown error'
-            )
+            // DO NOT create database record on failure - just log and notify
+            console.log(`❌ Embedding failed - NOT creating database record for: ${fileUrl.key}`)
 
             await eventManager.notify('embedding.processing.failed', { 
                 documentId: fileUrl.key,
                 error: error instanceof Error ? error.message : 'Unknown error'
             })
+
+            // Re-throw error to propagate to parent
+            throw error
         } finally {
             this.processingQueue.delete(fileUrl.key)
             console.log(`🏁 Removed from processing queue: ${fileUrl.key}`)

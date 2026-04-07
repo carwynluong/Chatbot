@@ -18,6 +18,7 @@ export interface IFileStorageStrategy {
     delete(key: string): Promise<void>
     getUrl(key: string): string
     exists(key: string): Promise<boolean>
+    listObjects(prefix?: string): Promise<Array<{key: string, size: number, lastModified: Date}>>
 }
 
 export interface IVectorStorageStrategy {

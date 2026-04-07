@@ -109,11 +109,13 @@ export class ProcessEmbeddingCommand implements ICommand {
 
     async execute(): Promise<void> {
         try {
+            console.log(`🚀 Starting ProcessEmbeddingCommand for: ${this.documentId}`)
             await eventManager.notify('embedding.processing.started', { 
                 documentId: this.documentId 
             })
 
             // Split text into chunks
+            console.log(`📋 Splitting text into chunks (length: ${this.fileContent.length})`)
             const { RecursiveCharacterTextSplitter } = await import('langchain/text_splitter')
             const textSplitter = new RecursiveCharacterTextSplitter({
                 chunkSize: 1000,
@@ -122,12 +124,17 @@ export class ProcessEmbeddingCommand implements ICommand {
             
             const chunks = await textSplitter.splitText(this.fileContent)
             const totalChunks = chunks.length
+            console.log(`✂️ Text split into ${totalChunks} chunks`)
 
             // Process chunks in batches
+            console.log(`🧪 Processing embeddings for ${totalChunks} chunks...`)
             const vectors = []
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i]
+                console.log(`🔄 Processing chunk ${i + 1}/${totalChunks} (${chunk.length} chars)`)
+                
                 const embedding = await this.aiStrategy.generateEmbedding(chunk)
+                console.log(`✅ Generated embedding for chunk ${i + 1}, dimension: ${embedding.length}`)
                 
                 vectors.push({
                     id: `${this.documentId}_chunk_${i}`,
@@ -153,18 +160,29 @@ export class ProcessEmbeddingCommand implements ICommand {
             }
 
             // Upsert to vector database
+            console.log(`💾 Upserting ${vectors.length} vectors to Pinecone...`)
             await this.vectorStorage.upsert(vectors)
+            console.log(`✅ Successfully upserted all vectors to Pinecone`)
 
             await eventManager.notify('embedding.processing.completed', { 
                 documentId: this.documentId,
                 totalChunks 
             })
+            
+            console.log(`✨ ProcessEmbeddingCommand completed successfully for: ${this.documentId}`)
 
         } catch (error) {
+            console.error(`❌ ProcessEmbeddingCommand failed for ${this.documentId}:`)
+            console.error('   Error type:', error instanceof Error ? error.constructor.name : typeof error)
+            console.error('   Error message:', error instanceof Error ? error.message : error)
+            console.error('   Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+            
             await eventManager.notify('embedding.processing.failed', { 
                 documentId: this.documentId,
                 error: error instanceof Error ? error.message : 'Unknown error'
             })
+            
+            // Re-throw to ensure calling code knows about the failure
             throw error
         }
     }

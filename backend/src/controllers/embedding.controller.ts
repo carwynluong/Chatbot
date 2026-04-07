@@ -36,31 +36,17 @@ export class EmbeddingController {
             
             console.log(`🔄 Processing files:`, fileUrls.map(f => f.originalName))
             
-            // Process files through embedding service (async)
-            console.log('🚀 [CONTROLLER] About to call processMultipleFilesDirect...')
-            const processingPromise = this.embeddingService.processMultipleFilesDirect(fileUrls)
-            console.log('🚀 [CONTROLLER] processMultipleFilesDirect called, setting up promise handlers...')
+            // Wait for embedding processing to complete
+            console.log('🚀 [CONTROLLER] About to call processMultipleFilesDirect and wait for completion...')
+            await this.embeddingService.processMultipleFilesDirect(fileUrls)
+            console.log('✅ [CONTROLLER] Embedding processing completed successfully')
             
-            processingPromise
-                .then(() => {
-                    console.log('✅ [CONTROLLER] Background embedding processing completed')
-                })
-                .catch((error) => {
-                    console.error('❌ [CONTROLLER] Background embedding processing failed:', {
-                        error: error,
-                        message: error instanceof Error ? error.message : 'Unknown error',
-                        stack: error instanceof Error ? error.stack : undefined
-                    })
-                })
-            
-            console.log('📤 [CONTROLLER] Returning immediate response to client...')
-            
-            // Return immediate response
+            // Return success response only after processing is actually complete
             ResponseBuilder.success({
                 filesProcessed: fileKeys,
-                status: 'processing',
-                message: `Started processing ${fileKeys.length} files for embeddings`
-            }, 'Files submitted for processing successfully')
+                status: 'completed',
+                message: `Successfully processed ${fileKeys.length} files for embeddings`
+            }, 'Files processed successfully')
                 .send(res)
             
         } catch (error) {

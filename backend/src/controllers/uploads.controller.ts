@@ -1,5 +1,5 @@
 import { Request, Response } from "express"
-import uploadsService from "../services/uploads.service"
+import uploadsService, { UploadsService } from "../services/uploads.service"
 import embeddingService from "../services/embedding.service"
 import { ResponseBuilder } from "../utils/builders"
 import { ErrorFactory } from "../utils/pattern.factories"
@@ -31,7 +31,7 @@ export class UploadsController {
             const uploadDataArray = files.map(file => {
                 const key = this.uploadsService.generateFileKey(file.originalname)
                 
-                return this.uploadsService.constructor.createUploadData(
+                return UploadsService.createUploadData(
                     key,
                     file.buffer,
                     file.mimetype,
@@ -258,35 +258,43 @@ export class UploadsController {
                     .send(res)
             }
 
-            console.log('📄 Listing documents for user:', userId)
+            console.log(`📄 Listing S3 files for user: ${userId}`)
             
-            // Import document service
+            // Get all files from S3
+            const s3Files = await this.uploadsService.listS3Objects('uploads')
+            console.log(`📄 Found ${s3Files.length} files in S3`)
+            
+            // Get embedded files from database for status check
             const { default: documentService } = await import('../services/document.service')
+            const dbDocuments = await documentService.getAllDocuments()
+            const embeddedMap = new Map(dbDocuments.map(doc => [
+                doc.s3Key || doc.id, 
+                { isEmbedded: doc.status === 'embedded', ...doc }
+            ]))
             
-            // Get all documents (later can filter by user)
-            const documents = await documentService.getAllDocuments()
+            // Combine S3 files with database status
+            const files = s3Files.map(file => {
+                const dbInfo = embeddedMap.get(file.key)
+                return {
+                    key: file.key,
+                    size: file.size,
+                    url: file.url,
+                    lastModified: file.lastModified,
+                    name: file.key.split('/').pop() || file.key,
+                    isEmbedded: dbInfo?.isEmbedded || false,
+                    status: dbInfo?.status || 'not_processed',
+                    fileType: dbInfo?.fileType || null,
+                    totalChunks: dbInfo?.totalChunks || 0
+                }
+            })
             
-            console.log(`📄 Found ${documents.length} documents`)
-            
-            // Transform documents to match frontend expectations
-            const files = documents.map(doc => ({
-                key: doc.s3Key || doc.id,
-                size: doc.fileSize || 0,
-                url: doc.s3Url || '',
-                isEmbedded: doc.status === 'embedded',
-                // Additional metadata 
-                fileName: doc.fileName,
-                fileType: doc.fileType,
-                status: doc.status,
-                totalChunks: doc.totalChunks,
-                createdAt: doc.createdAt,
-                updatedAt: doc.updatedAt
-            }))
-            
-            ResponseBuilder.success({
+            console.log(`📊 Files processed: ${files.length}, Embedded: ${files.filter(f => f.isEmbedded).length}`)
+
+            return ResponseBuilder.success({
                 files: files,
-                count: files.length
-            }, 'Files retrieved successfully')
+                count: files.length,
+                embedded: files.filter(f => f.isEmbedded).length
+            }, 'S3 files with embedding status retrieved successfully')
                 .send(res)
 
         } catch (error) {

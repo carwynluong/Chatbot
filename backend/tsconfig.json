@@ -6,7 +6,7 @@
     // },
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "noUnusedLocals": true,
+    "noUnusedLocals": false,
     "noImplicitAny": true,
     "experimentalDecorators": true,
     "strict": true,

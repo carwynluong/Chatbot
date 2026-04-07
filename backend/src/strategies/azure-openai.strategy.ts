@@ -10,9 +10,10 @@ import {
 export class AzureOpenAIStrategy implements IAIStrategy {
     async generateResponse(prompt: string): Promise<string> {
         try {
-            const response = await azureService.getClient().chat.completions.create({
-                model: AZURE_LLM_DEPLOYMENT_NAME!,
-                messages: [{ role: 'user', content: prompt }],
+            // Use custom Azure-compatible chat method
+            const response = await azureService.createChatCompletion([
+                { role: 'user', content: prompt }
+            ], {
                 max_completion_tokens: parseInt(MAX_TOKEN!) || 4000,
                 temperature: parseFloat(TEMPERATURE!) || 0.7,
                 stream: false
@@ -27,34 +28,47 @@ export class AzureOpenAIStrategy implements IAIStrategy {
 
     async generateEmbedding(text: string): Promise<number[]> {
         try {
-            const response = await azureService.getClient().embeddings.create({
-                model: AZURE_EMBEDDING_DEPLOYMENT_NAME!,
-                input: text
-            })
-
-            return response.data[0].embedding
+            console.log(`🔄 Generating embedding for text length: ${text.length}`)
+            console.log(`📀 Using deployment: ${AZURE_EMBEDDING_DEPLOYMENT_NAME}`)
+            
+            // Use custom Azure-compatible embedding method
+            const embedding = await azureService.createEmbedding(text)
+            
+            console.log(`✅ Embedding generated successfully, dimension: ${embedding.length}`)
+            return embedding
+            
         } catch (error) {
-            console.error('Azure OpenAI embedding error:', error)
-            throw new Error(`Failed to generate embedding: ${error}`)
+            console.error('❌ Azure OpenAI embedding error details:')
+            console.error('   Deployment:', AZURE_EMBEDDING_DEPLOYMENT_NAME)
+            console.error('   Text length:', text.length)
+            console.error('   Error:', error)
+            console.error('   Error message:', error instanceof Error ? error.message : 'Unknown error')
+            throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : error}`)
         }
     }
 
     async *streamResponse(prompt: string): AsyncIterable<string> {
         try {
-            const stream = await azureService.getClient().chat.completions.create({
-                model: AZURE_LLM_DEPLOYMENT_NAME!,
-                messages: [{ role: 'user', content: prompt }],
+            // Use non-streaming for now since custom Azure client is more reliable
+            console.log('🔄 Using non-streaming response for compatibility...')
+            const response = await azureService.createChatCompletion([
+                { role: 'user', content: prompt }
+            ], {
                 max_completion_tokens: parseInt(MAX_TOKEN!) || 4000,
                 temperature: parseFloat(TEMPERATURE!) || 0.7,
-                stream: true
+                stream: false
             })
 
-            for await (const chunk of stream) {
-                const content = chunk.choices[0]?.delta?.content
-                if (content) {
-                    yield content
-                }
+            const content = response.choices[0]?.message?.content || 'No response generated'
+            
+            // Simulate streaming by yielding chunks
+            const words = content.split(' ')
+            for (const word of words) {
+                yield word + ' '
+                // Small delay to simulate streaming
+                await new Promise(resolve => setTimeout(resolve, 50))
             }
+            
         } catch (error) {
             console.error('Azure OpenAI streaming error:', error)
             yield `Error occurred while streaming response: ${error}`

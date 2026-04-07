@@ -12,8 +12,8 @@ export class DocumentRepository implements IDocumentRepository {
         const document: DocumentMetadata = {
             id: input.s3Key,
             ...input,
-            totalChunks: 0,
-            status: 'processing',
+            totalChunks: input.totalChunks || 0,
+            status: input.status || 'processing',
             createdAt: now,
             updatedAt: now
         }
