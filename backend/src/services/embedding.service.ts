@@ -9,7 +9,7 @@ import { ResponseBuilder } from '../utils/builders'
 import axios from 'axios'
 import path from 'path'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
-import s3Client from '../providers/s3.connect'
+import s3Service from '../providers/s3.connect'
 import { S3_BUCKET_NAME } from '../config/env'
 
 export class EmbeddingService {
@@ -118,7 +118,7 @@ export class EmbeddingService {
                 Key: fileUrl.key
             })
             
-            const s3Response = await s3Client.send(getObjectCommand)
+            const s3Response = await s3Service.getS3Client().send(getObjectCommand)
             console.log(`📥 S3 response metadata:`, {
                 contentType: s3Response.ContentType,
                 contentLength: s3Response.ContentLength,

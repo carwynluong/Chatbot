@@ -1,5 +1,5 @@
 import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb"
-import { dynamoClient } from "../providers/dynamodb.connect"
+import dynamoService from "../providers/dynamodb.connect"
 import { IDocumentRepository } from "../interfaces/IRepository"
 import { DocumentMetadata, CreateDocumentInput } from "../models/document.model"
 import { DOCUMENT_TABLE_NAME } from "../config/env"
@@ -18,7 +18,7 @@ export class DocumentRepository implements IDocumentRepository {
             updatedAt: now
         }
 
-        await dynamoClient.send(new PutCommand({
+        await dynamoService.getDynamoClient().send(new PutCommand({
             TableName: this.tableName,
             Item: document
         }))
@@ -28,7 +28,7 @@ export class DocumentRepository implements IDocumentRepository {
 
     async findById(id: string): Promise<DocumentMetadata | null> {
         try {
-            const result = await dynamoClient.send(new GetCommand({
+            const result = await dynamoService.getDynamoClient().send(new GetCommand({
                 TableName: this.tableName,
                 Key: { id }
             }))
@@ -44,7 +44,7 @@ export class DocumentRepository implements IDocumentRepository {
             console.log('🔍 Finding documents by status:', status)
             
             // Use scan with filter instead of GSI query
-            const result = await dynamoClient.send(new ScanCommand({
+            const result = await dynamoService.getDynamoClient().send(new ScanCommand({
                 TableName: this.tableName,
                 FilterExpression: '#status = :status',
                 ExpressionAttributeNames: {
@@ -67,7 +67,7 @@ export class DocumentRepository implements IDocumentRepository {
 
     async findByUser(userId: string): Promise<DocumentMetadata[]> {
         try {
-            const result = await dynamoClient.send(new ScanCommand({
+            const result = await dynamoService.getDynamoClient().send(new ScanCommand({
                 TableName: this.tableName,
                 FilterExpression: '#userId = :userId',
                 ExpressionAttributeNames: {
@@ -102,7 +102,7 @@ export class DocumentRepository implements IDocumentRepository {
         expressionAttributeNames['#updatedAt'] = 'updatedAt'
         expressionAttributeValues[':updatedAt'] = new Date().toISOString()
 
-        await dynamoClient.send(new UpdateCommand({
+        await dynamoService.getDynamoClient().send(new UpdateCommand({
             TableName: this.tableName,
             Key: { id },
             UpdateExpression: `SET ${updateExpression.join(', ')}`,
@@ -131,7 +131,7 @@ export class DocumentRepository implements IDocumentRepository {
     }
 
     async delete(id: string): Promise<void> {
-        await dynamoClient.send(new DeleteCommand({
+        await dynamoService.getDynamoClient().send(new DeleteCommand({
             TableName: this.tableName,
             Key: { id }
         }))

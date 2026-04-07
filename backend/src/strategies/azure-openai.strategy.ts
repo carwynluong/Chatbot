@@ -1,5 +1,5 @@
 import { IAIStrategy } from "../interfaces/IStrategy"
-import azureClient from "../providers/azure-ai.connect"
+import azureService from "../providers/azure-ai.connect"
 import { 
     AZURE_LLM_DEPLOYMENT_NAME, 
     AZURE_EMBEDDING_DEPLOYMENT_NAME, 
@@ -10,7 +10,7 @@ import {
 export class AzureOpenAIStrategy implements IAIStrategy {
     async generateResponse(prompt: string): Promise<string> {
         try {
-            const response = await azureClient.chat.completions.create({
+            const response = await azureService.getClient().chat.completions.create({
                 model: AZURE_LLM_DEPLOYMENT_NAME!,
                 messages: [{ role: 'user', content: prompt }],
                 max_completion_tokens: parseInt(MAX_TOKEN!) || 4000,
@@ -27,7 +27,7 @@ export class AzureOpenAIStrategy implements IAIStrategy {
 
     async generateEmbedding(text: string): Promise<number[]> {
         try {
-            const response = await azureClient.embeddings.create({
+            const response = await azureService.getClient().embeddings.create({
                 model: AZURE_EMBEDDING_DEPLOYMENT_NAME!,
                 input: text
             })
@@ -41,7 +41,7 @@ export class AzureOpenAIStrategy implements IAIStrategy {
 
     async *streamResponse(prompt: string): AsyncIterable<string> {
         try {
-            const stream = await azureClient.chat.completions.create({
+            const stream = await azureService.getClient().chat.completions.create({
                 model: AZURE_LLM_DEPLOYMENT_NAME!,
                 messages: [{ role: 'user', content: prompt }],
                 max_completion_tokens: parseInt(MAX_TOKEN!) || 4000,

@@ -1,5 +1,5 @@
 import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb"
-import { dynamoClient } from "../providers/dynamodb.connect"
+import dynamoService from "../providers/dynamodb.connect"
 import { IChatRepository } from "../interfaces/IRepository"
 import { ChatSession, ChatMessage } from "../models/chat.model"
 import { CHAT_TABLE_NAME } from "../config/env"
@@ -20,7 +20,7 @@ export class ChatRepository implements IChatRepository {
             updatedAt: now
         }
 
-        await dynamoClient.send(new PutCommand({
+        await dynamoService.getDynamoClient().send(new PutCommand({
             TableName: this.tableName,
             Item: chatSession
         }))
@@ -30,7 +30,7 @@ export class ChatRepository implements IChatRepository {
 
     async findById(id: string): Promise<ChatSession | null> {
         try {
-            const result = await dynamoClient.send(new GetCommand({
+            const result = await dynamoService.getDynamoClient().send(new GetCommand({
                 TableName: this.tableName,
                 Key: { userId: id.split(':')[0], timestamp: parseInt(id.split(':')[1]) }
             }))
@@ -43,7 +43,7 @@ export class ChatRepository implements IChatRepository {
 
     async findByUser(userId: string): Promise<ChatSession[]> {
         try {
-            const result = await dynamoClient.send(new QueryCommand({
+            const result = await dynamoService.getDynamoClient().send(new QueryCommand({
                 TableName: this.tableName,
                 KeyConditionExpression: 'userId = :userId',
                 ExpressionAttributeValues: {
@@ -61,7 +61,7 @@ export class ChatRepository implements IChatRepository {
 
     async findByUserAndSessionId(userId: string, sessionId: string): Promise<ChatSession | null> {
         try {
-            const result = await dynamoClient.send(new QueryCommand({
+            const result = await dynamoService.getDynamoClient().send(new QueryCommand({
                 TableName: this.tableName,
                 KeyConditionExpression: 'userId = :userId',
                 FilterExpression: 'sessionId = :sessionId',
@@ -98,7 +98,7 @@ export class ChatRepository implements IChatRepository {
         expressionAttributeNames['#updatedAt'] = 'updatedAt'
         expressionAttributeValues[':updatedAt'] = new Date().toISOString()
 
-        await dynamoClient.send(new UpdateCommand({
+        await dynamoService.getDynamoClient().send(new UpdateCommand({
             TableName: this.tableName,
             Key: { userId, timestamp },
             UpdateExpression: `SET ${updateExpression.join(', ')}`,
@@ -111,7 +111,7 @@ export class ChatRepository implements IChatRepository {
         const [userId, timestampStr] = id.split(':')
         const timestamp = parseInt(timestampStr)
 
-        await dynamoClient.send(new DeleteCommand({
+        await dynamoService.getDynamoClient().send(new DeleteCommand({
             TableName: this.tableName,
             Key: { userId, timestamp }
         }))

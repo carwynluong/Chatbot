@@ -4,13 +4,13 @@ import cookieParser from 'cookie-parser'
 import bodyParser from 'body-parser'
 import { PORT, FRONTEND_URL } from './config/env'
 import cors from 'cors'
-import { dynamoClient } from './providers/dynamodb.connect'
+import dynamoService from './providers/dynamodb.connect'
 import { ListTablesCommand } from '@aws-sdk/client-dynamodb'
 import { HeadBucketCommand, CreateBucketCommand } from '@aws-sdk/client-s3'
-import s3Client from './providers/s3.connect'
+import s3Service from './providers/s3.connect'
 import { S3_BUCKET_NAME } from './config/env'
 import pineconeService from './providers/pinecone.connect'
-import { testAzureConnection } from './providers/azure-ai.connect'
+import azureService from './providers/azure-ai.connect'
 import S3Router from './routes/uploads.route'
 import AuthRouter from './routes/auth.route'
 import EmbeddingRouter from './routes/embedding.route'
@@ -47,7 +47,7 @@ const checkConnections = async () => {
         // Test DynamoDB connection
         try {
             const command = new ListTablesCommand({})
-            const result = await dynamoClient.send(command)
+            const result = await dynamoService.getRawClient().send(command)
             console.log(`✅ DynamoDB: Connected (${result.TableNames?.length || 0} tables)`)
         } catch (error) {
             console.warn('⚠️ DynamoDB connection issue:', (error as Error).message)
@@ -62,7 +62,7 @@ const checkConnections = async () => {
         }
 
         // Test Azure AI connection  
-        const isAzureReady = await testAzureConnection()
+        const isAzureReady = await azureService.healthCheck()
         if (isAzureReady) {
             console.log('✅ Azure AI: Connected')
         } else {
@@ -72,7 +72,7 @@ const checkConnections = async () => {
         // Test S3 connection
         try {
             const s3Command = new HeadBucketCommand({ Bucket: S3_BUCKET_NAME })
-            await s3Client.send(s3Command)
+            await s3Service.getS3Client().send(s3Command)
             console.log(`✅ S3: Bucket ${S3_BUCKET_NAME} accessible`)
         } catch (error: any) {
             console.warn(`⚠️ S3: Bucket ${S3_BUCKET_NAME} not accessible`)
@@ -82,7 +82,7 @@ const checkConnections = async () => {
                     const createCommand = new CreateBucketCommand({ 
                         Bucket: S3_BUCKET_NAME,
                     })
-                    await s3Client.send(createCommand)
+                    await s3Service.getS3Client().send(createCommand)
                     console.log(`✅ S3: Created bucket ${S3_BUCKET_NAME}`)
                 } catch (createError: any) {
                     console.error(`❌ S3: Failed to create bucket - ${createError.message}`)

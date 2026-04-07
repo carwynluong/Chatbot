@@ -1,5 +1,5 @@
 import { PutCommand, GetCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb"
-import { dynamoClient } from "../providers/dynamodb.connect"
+import dynamoService from "../providers/dynamodb.connect"
 import { DocumentMetadata, CreateDocumentInput } from "../models/document.model"
 import { DOCUMENT_TABLE_NAME } from "../config/env"
 
@@ -16,7 +16,7 @@ export class DocumentService {
             updatedAt: now
         }
 
-        await dynamoClient.send(new PutCommand({
+        await dynamoService.getDynamoClient().send(new PutCommand({
             TableName: DOCUMENT_TABLE_NAME,
             Item: document
         }))
@@ -55,7 +55,7 @@ export class DocumentService {
             expressionAttributeValues[':errorMessage'] = errorMessage
         }
 
-        await dynamoClient.send(new UpdateCommand({
+        await dynamoService.getDynamoClient().send(new UpdateCommand({
             TableName: DOCUMENT_TABLE_NAME,
             Key: { id: documentId },
             UpdateExpression: updateExpression.join(', '),
@@ -65,7 +65,7 @@ export class DocumentService {
     }
 
     async getDocument(documentId: string): Promise<DocumentMetadata | null> {
-        const result = await dynamoClient.send(new GetCommand({
+        const result = await dynamoService.getDynamoClient().send(new GetCommand({
             TableName: DOCUMENT_TABLE_NAME,
             Key: { id: documentId }
         }))
@@ -78,7 +78,7 @@ export class DocumentService {
             console.log('📊 Scanning all documents from DynamoDB...')
             console.log('📊 Table name:', DOCUMENT_TABLE_NAME)
             
-            const result = await dynamoClient.send(new ScanCommand({
+            const result = await dynamoService.getDynamoClient().send(new ScanCommand({
                 TableName: DOCUMENT_TABLE_NAME
             }))
             
@@ -105,7 +105,7 @@ export class DocumentService {
     }
 
     async deleteDocument(documentId: string): Promise<void> {
-        await dynamoClient.send(new DeleteCommand({
+        await dynamoService.getDynamoClient().send(new DeleteCommand({
             TableName: DOCUMENT_TABLE_NAME,
             Key: { id: documentId }
         }))
@@ -118,7 +118,7 @@ export class DocumentService {
 
     async getDocumentsByStatus(status: 'processing' | 'embedded' | 'error'): Promise<DocumentMetadata[]> {
         // Use scan with filter instead of non-existent GSI
-        const result = await dynamoClient.send(new ScanCommand({
+        const result = await dynamoService.getDynamoClient().send(new ScanCommand({
             TableName: DOCUMENT_TABLE_NAME,
             FilterExpression: '#status = :status',
             ExpressionAttributeNames: {

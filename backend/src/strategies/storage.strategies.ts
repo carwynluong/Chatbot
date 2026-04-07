@@ -1,6 +1,6 @@
 import { IFileStorageStrategy, IVectorStorageStrategy } from "../interfaces/IStrategy"
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3"
-import s3Client from "../providers/s3.connect"
+import s3Service from "../providers/s3.connect"
 import { S3_BUCKET_NAME, AWS_REGION } from "../config/env"
 import pineconeService from "../providers/pinecone.connect"
 import { PINECONE_INDEX_NAME } from "../config/env"
@@ -16,7 +16,7 @@ export class S3StorageStrategy implements IFileStorageStrategy {
                 Body: buffer,
                 ContentType: contentType,
             })
-            await s3Client.send(command)
+            await s3Service.getS3Client().send(command)
             return this.getUrl(key)
         } catch (error) {
             console.error(`S3 Upload error for key ${key}:`, error)
@@ -30,7 +30,7 @@ export class S3StorageStrategy implements IFileStorageStrategy {
                 Bucket: this.bucketName,
                 Key: key
             })
-            const response = await s3Client.send(command)
+            const response = await s3Service.getS3Client().send(command)
             
             if (!response.Body) {
                 throw new Error('No file content received')
@@ -57,7 +57,7 @@ export class S3StorageStrategy implements IFileStorageStrategy {
                 Bucket: this.bucketName,
                 Key: key
             })
-            await s3Client.send(command)
+            await s3Service.getS3Client().send(command)
         } catch (error) {
             console.error(`S3 Delete error for key ${key}:`, error)
             throw new Error(`Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -70,7 +70,7 @@ export class S3StorageStrategy implements IFileStorageStrategy {
 
     async exists(key: string): Promise<boolean> {
         try {
-            await s3Client.send(new HeadObjectCommand({
+            await s3Service.getS3Client().send(new HeadObjectCommand({
                 Bucket: this.bucketName,
                 Key: key
             }))
@@ -137,7 +137,7 @@ export class PineconeStorageStrategy implements IVectorStorageStrategy {
     async delete(ids: string[]): Promise<void> {
         try {
             const index = await pineconeService.getIndex(this.indexName)
-            await index.deleteOne(ids)
+            await index.deleteMany(ids)
         } catch (error) {
             console.error('Pinecone delete error:', error)
             throw new Error(`Failed to delete vectors: ${error}`)

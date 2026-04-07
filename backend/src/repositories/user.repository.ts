@@ -1,5 +1,5 @@
 import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb"
-import { dynamoClient } from "../providers/dynamodb.connect"
+import dynamoService from "../providers/dynamodb.connect"
 import { IUserRepository } from "../interfaces/IRepository"
 import { User, CreateUserInput } from "../models/user.model"
 import { USER_TABLE_NAME } from "../config/env"
@@ -19,7 +19,7 @@ export class UserRepository implements IUserRepository {
             updatedAt: now
         }
 
-        await dynamoClient.send(new PutCommand({
+        await dynamoService.getDynamoClient().send(new PutCommand({
             TableName: this.tableName,
             Item: user
         }))
@@ -29,7 +29,7 @@ export class UserRepository implements IUserRepository {
 
     async findById(id: string): Promise<User | null> {
         try {
-            const result = await dynamoClient.send(new GetCommand({
+            const result = await dynamoService.getDynamoClient().send(new GetCommand({
                 TableName: this.tableName,
                 Key: { id }
             }))
@@ -43,7 +43,7 @@ export class UserRepository implements IUserRepository {
     async findByEmail(email: string): Promise<User | null> {
         try {
             // Use Scan instead of Query since EmailIndex GSI doesn't exist
-            const result = await dynamoClient.send(new ScanCommand({
+            const result = await dynamoService.getDynamoClient().send(new ScanCommand({
                 TableName: this.tableName,
                 FilterExpression: 'email = :email',
                 ExpressionAttributeValues: {
@@ -75,7 +75,7 @@ export class UserRepository implements IUserRepository {
         expressionAttributeNames['#updatedAt'] = 'updatedAt'
         expressionAttributeValues[':updatedAt'] = new Date().toISOString()
 
-        await dynamoClient.send(new UpdateCommand({
+        await dynamoService.getDynamoClient().send(new UpdateCommand({
             TableName: this.tableName,
             Key: { id },
             UpdateExpression: `SET ${updateExpression.join(', ')}`,
@@ -89,7 +89,7 @@ export class UserRepository implements IUserRepository {
     }
 
     async delete(id: string): Promise<void> {
-        await dynamoClient.send(new DeleteCommand({
+        await dynamoService.getDynamoClient().send(new DeleteCommand({
             TableName: this.tableName,
             Key: { id }
         }))
