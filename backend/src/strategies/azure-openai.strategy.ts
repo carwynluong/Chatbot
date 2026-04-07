@@ -1,8 +1,6 @@
 import { IAIStrategy } from "../interfaces/IStrategy"
 import azureService from "../providers/azure-ai.connect"
 import { 
-    AZURE_LLM_DEPLOYMENT_NAME, 
-    AZURE_EMBEDDING_DEPLOYMENT_NAME, 
     MAX_TOKEN, 
     TEMPERATURE 
 } from "../config/env"
@@ -29,7 +27,6 @@ export class AzureOpenAIStrategy implements IAIStrategy {
     async generateEmbedding(text: string): Promise<number[]> {
         try {
             console.log(`🔄 Generating embedding for text length: ${text.length}`)
-            console.log(`📀 Using deployment: ${AZURE_EMBEDDING_DEPLOYMENT_NAME}`)
             
             // Use custom Azure-compatible embedding method
             const embedding = await azureService.createEmbedding(text)
@@ -39,7 +36,6 @@ export class AzureOpenAIStrategy implements IAIStrategy {
             
         } catch (error) {
             console.error('❌ Azure OpenAI embedding error details:')
-            console.error('   Deployment:', AZURE_EMBEDDING_DEPLOYMENT_NAME)
             console.error('   Text length:', text.length)
             console.error('   Error:', error)
             console.error('   Error message:', error instanceof Error ? error.message : 'Unknown error')

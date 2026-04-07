@@ -1,4 +1,3 @@
-import OpenAI from 'openai'
 import axios from 'axios'
 import { 
     AZURE_OPENAI_ENDPOINT, 
@@ -10,7 +9,6 @@ import {
 
 export class AzureOpenAIService {
     private static instance: AzureOpenAIService
-    private client: OpenAI
     private baseEndpoint: string
     private apiKey: string
     private apiVersion: string
@@ -20,26 +18,11 @@ export class AzureOpenAIService {
             throw new Error('Azure OpenAI configuration missing. Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY.')
         }
 
-        // Handle both Azure OpenAI and Azure AI Services endpoints
-        const cleanEndpoint = AZURE_OPENAI_ENDPOINT!.replace(/\/$/, '')
-        const baseURL = cleanEndpoint.includes('cognitiveservices.azure.com') 
-            ? `${cleanEndpoint}/openai/deployments`  // Azure AI Services (multi-service)
-            : `${cleanEndpoint}/openai/deployments`  // Azure OpenAI (dedicated)
-
-        console.log(`🔗 Azure OpenAI baseURL: ${baseURL}`)
-
-        this.baseEndpoint = cleanEndpoint
+        this.baseEndpoint = AZURE_OPENAI_ENDPOINT!.replace(/\/$/, '')
         this.apiKey = AZURE_OPENAI_API_KEY!
         this.apiVersion = AZURE_OPENAI_API_VERSION!
 
-        this.client = new OpenAI({
-            apiKey: AZURE_OPENAI_API_KEY!,
-            baseURL: baseURL,
-            defaultQuery: { 'api-version': AZURE_OPENAI_API_VERSION! },
-            defaultHeaders: {
-                'api-key': AZURE_OPENAI_API_KEY!
-            }
-        })
+        console.log(`🔗 Azure OpenAI endpoint: ${this.baseEndpoint}`)
     }
 
     static getInstance(): AzureOpenAIService {
@@ -49,9 +32,7 @@ export class AzureOpenAIService {
         return AzureOpenAIService.instance
     }
 
-    getClient(): OpenAI {
-        return this.client
-    }
+
 
     // Custom Azure-compatible embedding method
     async createEmbedding(input: string): Promise<number[]> {
@@ -142,7 +123,6 @@ export class AzureOpenAIService {
         console.log('⚠️ Azure OpenAI health check temporarily disabled - manual test passed')
         console.log('📋 Current configuration:')
         console.log(`   - Endpoint: ${AZURE_OPENAI_ENDPOINT}`)
-        console.log(`   - BaseURL: ${this.client.baseURL}`)
         console.log(`   - API Version: ${AZURE_OPENAI_API_VERSION}`)
         console.log(`   - LLM Deployment: ${AZURE_LLM_DEPLOYMENT_NAME}`)
         console.log(`   - Embedding Deployment: ${AZURE_EMBEDDING_DEPLOYMENT_NAME}`)
