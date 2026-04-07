@@ -29,36 +29,6 @@ const router = Router()
  */
 router.post('/process', requireAuth, embeddingController.processFileEmbedding.bind(embeddingController))
 
-// Debug route - no auth
-router.post('/debug-process', (req, res) => {
-    console.log('🧪 Debug route called!')
-    console.log('Body:', req.body)
-    res.json({ message: 'Debug route working', body: req.body })
-})
-
-// Simple test route
-router.get('/test', (req, res) => {
-    res.json({ message: 'Embedding route is working!', timestamp: new Date().toISOString() })
-})
-
-// Health check route
-router.get('/health', embeddingController.healthCheck.bind(embeddingController))
-
-// Generate test token for debugging
-router.get('/test-token', (req, res) => {
-    const jwt = require('jsonwebtoken')
-    const testToken = jwt.sign(
-        { id: 'test-user', email: 'test@example.com', role: 'user' },
-        process.env.JWT_SECRET,
-        { expiresIn: '1h' }
-    )
-    res.json({ 
-        message: 'Test token generated', 
-        token: testToken,
-        usage: `curl -H "Authorization: Bearer ${testToken}" ...`
-    })
-})
-
 /**
  * @swagger
  * /api/v1/embedding/health:
@@ -74,23 +44,6 @@ router.get('/test-token', (req, res) => {
  *         description: Pinecone connection failed
  */
 router.get('/health', requireAuth, embeddingController.healthCheck.bind(embeddingController))
-
-// Temporary debug route - remove after fixing auth issue
-router.post('/debug', (req, res) => {
-    const authHeader = req.headers.authorization
-    const cookies = req.cookies
-    console.log('🔍 Debug Info:')
-    console.log('  Auth Header:', authHeader ? authHeader.substring(0, 20) + '...' : 'Missing')
-    console.log('  Cookies:', Object.keys(cookies))
-    console.log('  Body:', req.body)
-    
-    res.json({
-        message: 'Debug info logged to console',
-        hasAuthHeader: !!authHeader,
-        cookieKeys: Object.keys(cookies),
-        bodyKeys: Object.keys(req.body || {})
-    })
-})
 
 // Debug routes for testing embedding pipeline
 router.get('/status', embeddingController.getProcessingStatus.bind(embeddingController))

@@ -2,10 +2,9 @@ import { IAIStrategy, IVectorStorageStrategy } from '../interfaces/IStrategy'
 import { ChatRepository } from '../repositories/chat.repository'
 import { AzureOpenAIStrategy } from '../strategies/azure-openai.strategy'
 import { PineconeStorageStrategy } from '../strategies/storage.strategies'
-import { ChatCommand, commandManager } from '../utils/commands'
+import { ChatCommand } from '../utils/commands'
 import { eventManager } from '../utils/event.manager'
 import { ChatMessage, ChatSession } from '../models/chat.model'
-import { ResponseBuilder } from '../utils/builders'
 import { ErrorFactory } from '../utils/pattern.factories'
 
 export class ChatService {
@@ -60,32 +59,6 @@ export class ChatService {
                 yield `Xin lỗi, đã xảy ra lỗi khi xử lý câu hỏi của bạn: ${error instanceof Error ? error.message : 'Unknown error'}`
             }
         }
-    }
-
-    async findSimilarChunks(questionEmbedding: number[], topK: number = 5): Promise<Array<{id: string, score: number, metadata?: any}>> {
-        try {
-            return await this.vectorStorage.query(questionEmbedding, topK)
-        } catch (error) {
-            console.error('❌ Error finding similar chunks:', error)
-            return []
-        }
-    }
-
-    buildPrompt(question: string, context: string): string {
-        return `Dựa trên thông tin sau đây, hãy trả lời câu hỏi của người dùng một cách chính xác và chi tiết.
-
-Thông tin tham khảo:
-${context}
-
-Câu hỏi: ${question}
-
-Hướng dẫn trả lời:
-- Sử dụng thông tin từ tài liệu được cung cấp để trả lời
-- Nếu thông tin không đủ để trả lời hoàn chỉnh, hãy nói rõ điều đó
-- Trả lời bằng tiếng Việt
-- Cấu trúc câu trả lời rõ ràng, dễ hiểu
-
-Trả lời:`
     }
 
     async saveChatSession(userId: string, messages: ChatMessage[], sessionId?: string): Promise<void> {

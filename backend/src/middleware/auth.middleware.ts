@@ -49,11 +49,3 @@ export const requireAuth = (req: AuthRequest, res: Response, next: NextFunction)
             .json({ message: messages[statusCodes.UNAUTHORIZED] })
     }
 }
-
-export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (req.user?.role === 'admin') {
-        return res.status(statusCodes.FORBIDDEN)
-            .json({ message: messages[statusCodes.FORBIDDEN] })
-    }
-    next()
-}

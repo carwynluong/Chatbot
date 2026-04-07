@@ -46,27 +46,6 @@ const upload = multer({ storage: multer.memoryStorage() })
  */
 router.post('/uploads', requireAuth, upload.array('file'), S3Controller.uploadMultipleFiles.bind(S3Controller))
 // /**
-//  * @swagger
-//  * /api/v1/s3/upload-url:
-//  *   post:
-//  *     summary: Get presigned upload URL
-//  *     tags: [S3]
-//  *     security:
-//  *       - bearerAuth: []
-//  *     requestBody:
-//  *       required: true
-//  *       content:
-//  *         application/json:
-//  *           schema:
-//  *             type: object
-//  *             properties:
-//  *               fileName:
-//  *                 type: string
-//  *     responses:
-//  *       200:
-//  *         description: Presigned URL generated
-//  */
-// router.post('/upload-url', requireAuth, S3Controller.getUploadUrl)
 /**
  * @swagger
  * /api/v1/s3/list-object:
