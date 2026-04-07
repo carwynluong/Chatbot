@@ -20,12 +20,16 @@ export interface FileItem {
   key: string;
   size: number;
   url: string;
-  name: string;
-  isEmbedded: boolean;
-  status?: string;
+  isEmbedded?: boolean;
+  name?: string;
+  // Additional metadata
+  fileName?: string;
   fileType?: string;
+  status?: string;
   totalChunks?: number;
-  lastModified: string;
+  lastModified?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface FileUrlResponse {
@@ -35,19 +39,4 @@ export interface FileUrlResponse {
 
 export interface EmbeddingResponse {
   message: string;
-}
-
-export interface FileItem {
-  key: string;
-  size: number;
-  url: string;
-  isEmbedded?: boolean;
-  name?: string;
-  // Additional metadata
-  fileName?: string;
-  fileType?: string;
-  status?: string;
-  totalChunks?: number;
-  createdAt?: string;
-  updatedAt?: string;
 }

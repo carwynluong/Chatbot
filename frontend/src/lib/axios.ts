@@ -31,6 +31,14 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
     (response) => response,
     async (error) => {
+        console.log('🔍 Axios error details:', {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            url: error.config?.url,
+            method: error.config?.method
+        })
+        
         const original = error.config
         
         if (error.response?.status === 401 && error.response?.data?.code === 'TOKEN_EXPIRED' && !original._retry) {
@@ -40,10 +48,15 @@ axiosInstance.interceptors.response.use(
                 await axiosInstance.post('/auth/refresh')
                 return axiosInstance(original)
             } catch (refreshError) {
+                console.log('❌ Token refresh failed - redirecting to login')
                 // Refresh failed, redirect to login
                 window.location.href = '/login'
                 return Promise.reject(refreshError)
             }
+        }
+        
+        if (error.response?.status === 401) {
+            console.log('❌ Unauthorized request - possible invalid token')
         }
         
         return Promise.reject(error)

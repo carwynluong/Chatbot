@@ -40,7 +40,6 @@ export default function ChatInterface() {
                     })
                     
                     if (targetSession) {
-                        console.log('\u2705 Found target session:', targetSession.sessionId || chatId)
                         const messagesWithDate = targetSession.messages.map((msg: any) => ({
                             ...msg,
                             timestamp: new Date(msg.timestamp)
@@ -48,7 +47,6 @@ export default function ChatInterface() {
                         setMessages(messagesWithDate)
                         setCurrentChatId(chatId)
                     } else {
-                        console.log('❌ Session not found:', chatId)
                         // Session not found, start new chat
                         setMessages([])
                         setCurrentChatId(chatId)
@@ -89,7 +87,7 @@ export default function ChatInterface() {
                 setCurrentChatId(newSessionId)
             })
         }
-    }, [user, chatId, isNewChat, currentChatId])
+    }, [user, chatId, isNewChat]) // Remove currentChatId from deps to prevent loops
 
     const sendMessage = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -120,14 +118,18 @@ export default function ChatInterface() {
             setMessages(finalMessages)
 
             if (user?.id) {
-                // Generate sessionId nếu chưa có (new chat)
-                let sessionId = currentChatId
-                if (!sessionId) {
-                    sessionId = `session-${Date.now()}`
-                    setCurrentChatId(sessionId)
+                try {
+                    // Use consistent sessionId for entire conversation
+                    let sessionId = currentChatId
+                    if (!sessionId) {
+                        sessionId = `chat_${Date.now()}`
+                        setCurrentChatId(sessionId)
+                    }
+                    
+                    await ChatAPI.saveChatHistory(user.id, finalMessages, sessionId)
+                } catch (saveError) {
+                    console.error('Failed to save chat:', saveError)
                 }
-                // Save với sessionId để maintain cùng 1 session
-                ChatAPI.saveChatHistory(user.id, finalMessages, sessionId)
             }
         } catch (error) {
             console.log('Chat error:', error)

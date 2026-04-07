@@ -40,7 +40,6 @@ export default function Sidebar() {
     try {
       const response = await ChatAPI.getChatHistory(user.id)
       
-      // Fix: Access history from response.data.history
       if (response.data && response.data.history) {
         const sessions = response.data.history
           .map((session: any, index: number) => ({
@@ -50,7 +49,6 @@ export default function Sidebar() {
             messageCount: session.messages?.length || 0
           }))
         setChatSessions(sessions)
-        console.log('✅ Loaded chat sessions:', sessions.length)
       }
     } catch (error) {
       console.error('Failed to load chat sessions:', error)
@@ -70,29 +68,19 @@ export default function Sidebar() {
   const deleteChatSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation() // Ngăn việc select chat khi click delete
     
-    if (!user?.id) {
-      console.log('No user ID found')
-      return
-    }
+    if (!user?.id) return
     
     if (confirm('Bạn có chắc chắn muốn xóa cuộc trò chuyện này?')) {
-      console.log('Deleting session:', sessionId, 'for user:', user.id)
-      
       try {
-        const response = await ChatAPI.deleteChatSession(user.id, sessionId)
-        console.log('Delete response:', response)
+        await ChatAPI.deleteChatSession(user.id, sessionId)
         
-        // Force reload chat sessions
-        console.log('Reloading chat sessions...')
+        // Reload chat sessions after deletion
         await loadChatSessions()
         
-        // Nếu đang ở chat bị xóa, chuyển về trang chủ
+        // Navigate away if currently viewing deleted chat
         if (currentChatId === sessionId) {
-          console.log('Navigating away from deleted session')
           navigate('/')
         }
-        
-        console.log('Chat session deleted successfully')
         
       } catch (error) {
         console.error('Failed to delete chat session:', error)

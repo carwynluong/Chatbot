@@ -43,35 +43,14 @@ export class UploadsController {
             const uploadResults = await this.uploadsService.uploadMultipleFiles(uploadDataArray)
 
             // Automatically trigger embedding processing for uploaded files
-            console.log('🔄 Auto-processing embeddings for uploaded files...')
+            console.log('� Files uploaded successfully, manual embedding required')
             
-            try {
-                const fileUrls = uploadResults.map(result => ({
-                    key: result.key,
-                    url: result.url,
-                    originalName: result.originalName
-                }))
-
-                // Process embeddings in background - don't wait for completion
-                this.embeddingService.processMultipleFilesDirect(fileUrls)
-                    .then(() => {
-                        console.log('✅ Background embedding processing completed')
-                    })
-                    .catch((error) => {
-                        console.error('❌ Background embedding processing failed:', error)
-                    })
-                
-            } catch (embeddingError) {
-                console.error('⚠️ Embedding processing failed but upload succeeded:', embeddingError)
-                // Don't fail the upload if embedding fails
-            }
-
-            // Return success response
+            // Return success response without auto-embedding
             ResponseBuilder.success({
                 files: uploadResults,
                 count: uploadResults.length,
-                embeddingStatus: 'processing'
-            }, `Successfully uploaded ${uploadResults.length} files`)
+                embeddingStatus: 'not_processed'
+            }, `Successfully uploaded ${uploadResults.length} files - use embedding endpoint to process`)
                 .setStatus(statusCodes.CREATED)
                 .send(res)
 
@@ -96,29 +75,18 @@ export class UploadsController {
 
             console.log(`📤 Uploading file: ${file.originalname}`)
 
-            // Generate unique key and upload
+            // Generate unique key and upload to S3 only
             const key = this.uploadsService.generateFileKey(file.originalname)
             const url = await this.uploadsService.uploadFile(key, file.buffer, file.mimetype)
 
-            // Auto-process embedding
-            try {
-                this.embeddingService.processMultipleFilesDirect([{
-                    key,
-                    url,
-                    originalName: file.originalname
-                }]).catch(error => {
-                    console.error('❌ Background embedding failed:', error)
-                })
-            } catch (embeddingError) {
-                console.error('⚠️ Embedding processing failed but upload succeeded:', embeddingError)
-            }
+            console.log('📁 File uploaded successfully, manual embedding required')
 
             ResponseBuilder.success({
                 key,
                 url,
                 originalName: file.originalname,
-                embeddingStatus: 'processing'
-            }, 'File uploaded successfully')
+                embeddingStatus: 'not_processed'
+            }, 'File uploaded successfully - use embedding endpoint to process')
                 .setStatus(statusCodes.CREATED)
                 .send(res)
 
@@ -133,7 +101,19 @@ export class UploadsController {
 
     async getFileUrl(req: Request, res: Response) {
         try {
-            const { key } = req.params
+            // Handle both legacy :key and encoded :encodedKey patterns
+            let key = req.params.key || req.params.encodedKey
+
+            // If it's an encoded key, decode it from base64
+            if (req.params.encodedKey) {
+                try {
+                    key = Buffer.from(req.params.encodedKey, 'base64').toString('utf-8')
+                } catch (decodeError) {
+                    console.error('❌ Error decoding key:', decodeError)
+                    return ResponseBuilder.validation('Invalid encoded file key')
+                        .send(res)
+                }
+            }
 
             if (!key) {
                 return ResponseBuilder.validation('File key is required')
@@ -167,34 +147,58 @@ export class UploadsController {
 
     async deleteFile(req: Request, res: Response) {
         try {
-            const { key } = req.params
+            console.log('🔍 DELETE request received:', {
+                originalUrl: req.originalUrl,
+                params: req.params,
+                method: req.method
+            })
+
+            // Handle both legacy :key and encoded :encodedKey patterns
+            let key = req.params.key || req.params.encodedKey
+
+            console.log('🔍 Raw key from params:', { key, encodedKey: req.params.encodedKey })
+
+            // If it's an encoded key, decode it from base64
+            if (req.params.encodedKey) {
+                try {
+                    const decoded = Buffer.from(req.params.encodedKey, 'base64').toString('utf-8')
+                    key = decodeURIComponent(decoded)  // Double decode: base64 then URL decode
+                    console.log('✅ Decoded key:', { 
+                        base64Decoded: decoded, 
+                        finalKey: key 
+                    })
+                } catch (decodeError) {
+                    console.error('❌ Error decoding key:', decodeError)
+                    return ResponseBuilder.validation('Invalid encoded file key')
+                        .send(res)
+                }
+            }
 
             if (!key) {
+                console.error('❌ No key provided')
                 return ResponseBuilder.validation('File key is required')
                     .send(res)
             }
 
-            // Check if file exists
+            // Check if file exists on S3
             const exists = await this.uploadsService.fileExists(key)
             
             if (!exists) {
+                console.log(`❌ File not found on S3: ${key}`)
                 return ResponseBuilder.notFound('File', key)
                     .send(res)
             }
 
-            // Delete file and its embeddings
+            console.log(`🗑️ Deleting file from S3 only: ${key}`)
+
+            // Delete file from S3 only (simplified logic)
             await this.uploadsService.deleteFile(key)
             
-            // Also delete document embeddings
-            try {
-                await this.embeddingService.deleteDocument(key)
-            } catch (embeddingError) {
-                console.warn('⚠️ Failed to delete embeddings for file:', key, embeddingError)
-                // Don't fail the file deletion if embedding deletion fails
-            }
+            console.log(`✅ Successfully deleted file from S3: ${key}`)
 
             ResponseBuilder.success({
-                key
+                key,
+                message: 'File deleted from S3 successfully'
             }, 'File deleted successfully')
                 .send(res)
 
@@ -209,7 +213,19 @@ export class UploadsController {
 
     async downloadFile(req: Request, res: Response) {
         try {
-            const { key } = req.params
+            // Handle both legacy :key and encoded :encodedKey patterns
+            let key = req.params.key || req.params.encodedKey
+
+            // If it's an encoded key, decode it from base64
+            if (req.params.encodedKey) {
+                try {
+                    key = Buffer.from(req.params.encodedKey, 'base64').toString('utf-8')
+                } catch (decodeError) {
+                    console.error('❌ Error decoding key:', decodeError)
+                    return ResponseBuilder.validation('Invalid encoded file key')
+                        .send(res)
+                }
+            }
 
             if (!key) {
                 return ResponseBuilder.validation('File key is required')

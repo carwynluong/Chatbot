@@ -32,8 +32,6 @@ export class AzureOpenAIService {
         return AzureOpenAIService.instance
     }
 
-
-
     // Custom Azure-compatible embedding method
     async createEmbedding(input: string): Promise<number[]> {
         try {

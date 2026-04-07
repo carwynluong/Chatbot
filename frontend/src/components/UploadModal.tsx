@@ -3,7 +3,7 @@ import { Dialog, Transition } from '@headlessui/react'
 import { XMarkIcon, CloudArrowUpIcon, DocumentIcon, TrashIcon } from '@heroicons/react/24/outline'
 import UploadGenAIAPI from '../api/apiUploadGenAI'
 import ApiEmbeddingAI from '../api/apiEmbeddingAI'
-import type { FileItem, ListFilesResponse } from '../interfaces/upload.interface'
+import type { FileItem } from '../interfaces/upload.interface'
 import toast from 'react-hot-toast'
 
 interface UploadModalProps {
@@ -16,7 +16,6 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isEmbedding, setIsEmbedding] = useState(false)
-  const [embeddedFiles, setEmbeddedFiles] = useState<Set<string>>(new Set())
   const [dragActive, setDragActive] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -126,10 +125,6 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
         const result = await ApiEmbeddingAI.processFiles(selectedFiles)
         console.log('✅ Batch embedding result:', result)
         
-        selectedFiles.forEach(fileKey => {
-          setEmbeddedFiles(prev => new Set([...prev, fileKey]))
-        })
-        
         toast.dismiss(loadingToast)
         toast.success(`✅ Tạo embedding cho ${selectedFiles.length} files thành công!`)
       } else {
@@ -139,8 +134,6 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
         
         const result = await ApiEmbeddingAI.createEmbedding(fileKey)
         console.log('✅ Single embedding result:', result)
-        
-        setEmbeddedFiles(prev => new Set([...prev, fileKey]))
         
         toast.dismiss(loadingToast)
         toast.success(`✅ Tạo embedding cho "${fileKey}" thành công!`)
@@ -348,7 +341,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
                               {file.name}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {formatFileSize(file.size)} • {formatDate(file.lastModified)}
+                              {formatFileSize(file.size)}{file.lastModified && ` • ${formatDate(file.lastModified)}`}
                               {file.isEmbedded && (
                                 <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
                                   Đã embed

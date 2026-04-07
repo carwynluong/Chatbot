@@ -38,12 +38,17 @@ export class UploadGenAIAPI {
     }
 
     async getFileUrl(key: string): Promise<FileUrlResponse> {
-        const res = await axios.get<FileUrlResponse>(`/s3/uploads/${key}`)
+        // Encode the key to base64 to handle special characters and slashes
+        const encodedKey = btoa(encodeURIComponent(key))
+        const res = await axios.get<FileUrlResponse>(`/s3/file/${encodedKey}`)
         return res.data
     }
 
     async deleteFile(key: string): Promise<any> {
-        const res = await axios.delete(`/s3/uploads/${key}`)
+        // Encode the key to base64 to handle special characters and slashes
+        const encodedKey = btoa(encodeURIComponent(key))
+        console.log('🔍 Deleting file:', { originalKey: key, encodedKey })
+        const res = await axios.delete(`/s3/file/${encodedKey}`)
         return res.data
     }
 }

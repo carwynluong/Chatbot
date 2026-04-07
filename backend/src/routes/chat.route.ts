@@ -75,19 +75,12 @@ router.post('/', requireAuth, chatController.chatWithDocuments.bind(chatControll
 router.post('/save', requireAuth, chatController.saveChat.bind(chatController))
 /**
  * @swagger
- * /api/v1/chat/history/{userId}:
+ * /api/v1/chat/history:
  *   get:
- *     summary: Get chat history for a user
+ *     summary: Get chat history for current user
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - name: userId
- *         in: path
- *         required: true
- *         description: ID of user to get chat history
- *         schema:
- *           type: string
  *     responses:
  *       200:
  *         description: Chat history retrieved successfully
@@ -114,22 +107,18 @@ router.post('/save', requireAuth, chatController.saveChat.bind(chatController))
  */
 
 
-router.get('/history/:userId', requireAuth, chatController.getChatHistory.bind(chatController))
+// Get current user's chat history (userId from auth token)
+router.get('/history', requireAuth, chatController.getChatHistory.bind(chatController))
 
 /**
  * @swagger
- * /api/v1/chat/delete/{userId}/{sessionId}:
+ * /api/v1/chat/delete/{sessionId}:
  *   delete:
  *     summary: Delete chat session
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
  *       - in: path
  *         name: sessionId
  *         required: true
@@ -139,7 +128,7 @@ router.get('/history/:userId', requireAuth, chatController.getChatHistory.bind(c
  *       200:
  *         description: Chat deleted successfully
  */
-router.delete('/delete/:userId/:sessionId', requireAuth, chatController.deleteChatSession.bind(chatController))
+router.delete('/delete/:sessionId', requireAuth, chatController.deleteChatSession.bind(chatController))
 
 
 export default router

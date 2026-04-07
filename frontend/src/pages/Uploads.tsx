@@ -11,6 +11,15 @@ export default function UploadPage() {
     const [isUploading, setIsUploading] = useState(false)
     const [isEmbedding, setIsEmbedding] = useState(false)
     const [embeddedFiles, setEmbeddedFiles] = useState<Set<string>>(new Set())
+    const [deleteConfirm, setDeleteConfirm] = useState<{
+        show: boolean
+        fileKey: string
+        fileName: string
+    }>({
+        show: false,
+        fileKey: '',
+        fileName: ''
+    })
 
     useEffect(() => {
         loadFiles()
@@ -23,6 +32,7 @@ export default function UploadPage() {
                 ...file,
                 name: file.fileName || file.key.split('/').pop() || file.key,
                 isEmbedded: file.status === 'embedded',
+                status: file.status || 'not_processed'
             }))
             setFiles(fileWithEmbedding)
         } catch (error) {
@@ -58,25 +68,83 @@ export default function UploadPage() {
     }
 
     const handleEmbedding = async () => {
-        if (selectedFiles.length === 0) {
-            toast.error('Please select files to embed.')
+        // Only allow embedding files that are not yet embedded
+        const nonEmbeddedFiles = selectedFiles.filter(fileKey => {
+            const file = files.find(f => f.key === fileKey)
+            return file && !file.isEmbedded && file.status !== 'processing'
+        })
+
+        if (nonEmbeddedFiles.length === 0) {
+            toast.error('Vui lòng chọn file chưa embedding để xử lý.')
             return
         }
 
+        console.log('🔄 Starting manual embedding process for:', nonEmbeddedFiles)
+
         setIsEmbedding(true)
         try {
-            await ApiEmbeddingAI.processFiles(selectedFiles)
-            toast.success('Files embedded successfully')
+            await ApiEmbeddingAI.processFiles(nonEmbeddedFiles)
+            toast.success(`✅ Tạo embedding cho ${nonEmbeddedFiles.length} files thành công!`)
 
-            setEmbeddedFiles(prev => new Set([...prev, ...selectedFiles]))
+            setEmbeddedFiles(prev => new Set([...prev, ...nonEmbeddedFiles]))
             setSelectedFiles([])
             loadFiles()
 
         } catch (error) {
-            toast.error('Lỗi khi embedding file')
+            console.error('❌ Manual embedding error:', error)
+            toast.error('Lỗi khi tạo embedding cho files')
         } finally {
             setIsEmbedding(false)
         }
+    }
+
+    const handleDeleteFile = async (fileKey: string, fileName: string) => {
+        setDeleteConfirm({
+            show: true,
+            fileKey,
+            fileName
+        })
+    }
+
+    const confirmDeleteFile = async () => {
+        try {
+            console.log('🔍 Attempting to delete file:', deleteConfirm.fileKey)
+            await UploadGenAIAPI.deleteFile(deleteConfirm.fileKey)
+            toast.success(`File "${deleteConfirm.fileName}" đã được xóa thành công`)
+            
+            // Remove from selected files if it was selected  
+            setSelectedFiles(prev => prev.filter(key => key !== deleteConfirm.fileKey))
+            setEmbeddedFiles(prev => {
+                const newSet = new Set(prev)
+                newSet.delete(deleteConfirm.fileKey)
+                return newSet
+            })
+            
+            // Reload files list
+            await loadFiles()
+            
+        } catch (error) {
+            console.error('❌ Delete file error details:', {
+                error,
+                response: error.response,
+                status: error.response?.status,
+                data: error.response?.data
+            })
+            
+            if (error.response?.status === 401) {
+                toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+            } else if (error.response?.status === 404) {
+                toast.error(`File "${deleteConfirm.fileName}" không tồn tại hoặc đã bị xóa`)
+            } else {
+                toast.error(`Lỗi khi xóa file "${deleteConfirm.fileName}"`)
+            }
+        } finally {
+            setDeleteConfirm({ show: false, fileKey: '', fileName: '' })
+        }
+    }
+
+    const cancelDeleteFile = () => {
+        setDeleteConfirm({ show: false, fileKey: '', fileName: '' })
     }
     const formatFileSize = (bytes: number) => {
         if (bytes === 0) return '0 Bytes'
@@ -131,7 +199,10 @@ export default function UploadPage() {
                                 disabled={selectedFiles.length === 0 || isEmbedding}
                                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                             >
-                                {isEmbedding ? 'Đang embedding...' : `Embedding (${selectedFiles.length})`}
+                                {isEmbedding ? 'Đang tạo embedding...' : `Tạo Embedding (${selectedFiles.filter(fileKey => {
+                                    const file = files.find(f => f.key === fileKey)
+                                    return file && !file.isEmbedded && file.status !== 'processing'
+                                }).length})`}
                             </button>
                         </div>
                     </div>
@@ -153,8 +224,9 @@ export default function UploadPage() {
                                             type="checkbox"
                                             checked={selectedFiles.includes(file.key)}
                                             onChange={() => handleFileSelect(file.key)}
-                                            disabled={file.isEmbedded}
-                                            className="w-4 h-4 text-blue-600"
+                                            disabled={file.isEmbedded || file.status === 'processing'}
+                                            className="w-4 h-4 text-blue-600 disabled:opacity-50"
+                                            title={file.isEmbedded ? 'File đã được embedding' : file.status === 'processing' ? 'File đang được xử lý' : 'Chọn file để embedding'}
                                         />
                                         <div>
                                             <p className="font-medium text-gray-900">{file.name}</p>
@@ -164,17 +236,35 @@ export default function UploadPage() {
                                     <div className="flex items-center gap-2">
                                         {file.isEmbedded && (
                                             <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                                                Đã embedding
+                                                ✅ Đã embedding
+                                            </span>
+                                        )}
+                                        {!file.isEmbedded && file.status === 'not_processed' && (
+                                            <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                                📄 Chưa embedding
+                                            </span>
+                                        )}
+                                        {!file.isEmbedded && file.status === 'processing' && (
+                                            <span className="px-2 py-1 bg-yellow-100 text-yellow-600 text-xs rounded-full">
+                                                ⏳ Đang xử lý...
                                             </span>
                                         )}
                                         <a
                                             href={file.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-blue-600 hover:text-blue-700 text-sm"
+                                            className="text-blue-600 hover:text-blue-700 text-sm px-2 py-1 rounded hover:bg-blue-50"
+                                            title="Xem file"
                                         >
                                             Xem
                                         </a>
+                                        <button
+                                            onClick={() => handleDeleteFile(file.key, file.name || file.key.split('/').pop() || file.key)}
+                                            className="text-red-600 hover:text-red-700 text-sm px-2 py-1 rounded hover:bg-red-50"
+                                            title="Xóa file"
+                                        >
+                                            Xóa
+                                        </button>
                                     </div>
                                 </div>
                             ))}
@@ -202,6 +292,36 @@ export default function UploadPage() {
                     </div>
                 )}
             </div>
+            
+            {/* Delete Confirmation Modal */}
+            {deleteConfirm.show && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+                        <h3 className="text-lg font-semibold mb-4 text-gray-900">Xác nhận xóa file</h3>
+                        <p className="text-gray-600 mb-6">
+                            Bạn có chắc chắn muốn xóa file <strong>{deleteConfirm.fileName}</strong>? 
+                            <br />
+                            <span className="text-sm text-red-600">
+                                File sẽ bị xóa khỏi S3, embedding và database. Hành động này không thể hoàn tác!
+                            </span>
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={cancelDeleteFile}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={confirmDeleteFile}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                            >
+                                Xóa file
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 

@@ -91,20 +91,17 @@ Trả lời:`
     async saveChatSession(userId: string, messages: ChatMessage[], sessionId?: string): Promise<void> {
         try {
             const finalSessionId = sessionId || `session_${Date.now()}`
-
-            if (sessionId) {
-                // Check if session exists and update
-                const existingSession = await this.chatRepository.findByUserAndSessionId(userId, sessionId)
-                
-                if (existingSession) {
-                    // Update existing session
-                    await this.chatRepository.update(`${userId}:${existingSession.timestamp}`, { 
-                        messages,
-                        updatedAt: new Date().toISOString()
-                    })
-                } else {
-                    throw this.errorFactory.createNotFoundError('Chat session', sessionId)
-                }
+            
+            // Check if session already exists
+            const existingSession = await this.chatRepository.findByUserAndSessionId(userId, finalSessionId)
+            
+            if (existingSession) {
+                // Update existing session with new messages
+                const sessionKey = `${userId}:${existingSession.timestamp}`
+                await this.chatRepository.update(sessionKey, {
+                    messages: messages,
+                    sessionId: finalSessionId
+                })
             } else {
                 // Create new session
                 await this.chatRepository.create({
@@ -112,17 +109,16 @@ Trả lời:`
                     messages, 
                     sessionId: finalSessionId
                 })
-
-                await eventManager.notify('chat.session.created', { 
-                    sessionId: finalSessionId,
-                    userId
-                })
             }
 
-            console.log(`💾 Saved chat session: ${finalSessionId} for user: ${userId}`)
+            await eventManager.notify('chat.session.saved', { 
+                sessionId: finalSessionId,
+                userId,
+                isUpdate: !!existingSession
+            })
 
         } catch (error) {
-            console.error('❌ Error saving chat session:', error)
+            console.error('Error saving chat session:', error)
             throw this.errorFactory.createInternalError('Failed to save chat session', error as Error)
         }
     }
@@ -138,8 +134,6 @@ Trả lời:`
 
     async deleteChatSession(userId: string, sessionId: string): Promise<void> {
         try {
-            console.log(`🗑️ Deleting session ${sessionId} for user ${userId}`)
-            
             await this.chatRepository.deleteSession(userId, sessionId)
 
             await eventManager.notify('chat.session.deleted', { 
@@ -147,10 +141,8 @@ Trả lời:`
                 userId
             })
 
-            console.log(`✅ Successfully deleted session: ${sessionId}`)
-
         } catch (error) {
-            console.error(`❌ Error deleting session ${sessionId}:`, error)
+            console.error(`Error deleting session ${sessionId}:`, error)
             throw this.errorFactory.createInternalError('Failed to delete chat session', error as Error)
         }
     }

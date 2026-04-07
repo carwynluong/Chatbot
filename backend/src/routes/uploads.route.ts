@@ -82,15 +82,15 @@ router.post('/uploads', requireAuth, upload.array('file'), S3Controller.uploadMu
 router.get('/list-object', requireAuth, S3Controller.listFiles.bind(S3Controller))
 /**
  * @swagger
- * /api/v1/s3/uploads/{key}:
+ * /api/v1/s3/file/{path}:
  *   get:
- *     summary: Get file URL by key
+ *     summary: Get file URL by full key path
  *     tags: [S3]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: key
+ *         name: path
  *         required: true
  *         schema:
  *           type: string
@@ -98,13 +98,13 @@ router.get('/list-object', requireAuth, S3Controller.listFiles.bind(S3Controller
  *       200:
  *         description: File URL retrieved
  *   delete:
- *     summary: Delete file by key
+ *     summary: Delete file by full key path
  *     tags: [S3]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: key
+ *         name: path
  *         required: true
  *         schema:
  *           type: string
@@ -112,6 +112,11 @@ router.get('/list-object', requireAuth, S3Controller.listFiles.bind(S3Controller
  *       200:
  *         description: File deleted successfully
  */
+// File routes with base64 encoded keys to avoid path issues
+router.get('/file/:encodedKey', requireAuth, S3Controller.getFileUrl.bind(S3Controller))
+router.delete('/file/:encodedKey', requireAuth, S3Controller.deleteFile.bind(S3Controller))
+
+// Legacy routes for backward compatibility
 router.get('/uploads/:key', requireAuth, S3Controller.getFileUrl.bind(S3Controller))
 router.delete('/uploads/:key', requireAuth, S3Controller.deleteFile.bind(S3Controller))
 

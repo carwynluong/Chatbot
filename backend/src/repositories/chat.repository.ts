@@ -8,24 +8,30 @@ export class ChatRepository implements IChatRepository {
     private tableName = CHAT_TABLE_NAME!
 
     async create(input: { userId: string, messages: ChatMessage[], sessionId?: string }): Promise<ChatSession> {
-        const now = new Date().toISOString()
-        const timestamp = Date.now()
-        
-        const chatSession: ChatSession = {
-            userId: input.userId,
-            timestamp,
-            sessionId: input.sessionId || `session_${timestamp}`,
-            messages: input.messages,
-            createdAt: now,
-            updatedAt: now
+        try {
+            const now = new Date().toISOString()
+            const timestamp = Date.now()
+            
+            const chatSession: ChatSession = {
+                userId: input.userId,
+                timestamp,
+                sessionId: input.sessionId || `session_${timestamp}`,
+                messages: input.messages,
+                createdAt: now,
+                updatedAt: now
+            }
+
+            await dynamoService.getDynamoClient().send(new PutCommand({
+                TableName: this.tableName,
+                Item: chatSession
+            }))
+
+            return chatSession
+            
+        } catch (error) {
+            console.error('DynamoDB save error:', error)
+            throw error
         }
-
-        await dynamoService.getDynamoClient().send(new PutCommand({
-            TableName: this.tableName,
-            Item: chatSession
-        }))
-
-        return chatSession
     }
 
     async findById(id: string): Promise<ChatSession | null> {
@@ -73,38 +79,44 @@ export class ChatRepository implements IChatRepository {
             
             return result.Items?.[0] as ChatSession || null
         } catch (error) {
-            console.error('Error finding chat by user and session:', error)
+            console.error('Find session error:', error)
             return null
         }
     }
 
     async update(id: string, updates: Partial<ChatSession>): Promise<void> {
-        const [userId, timestampStr] = id.split(':')
-        const timestamp = parseInt(timestampStr)
+        try {
+            const [userId, timestampStr] = id.split(':')
+            const timestamp = parseInt(timestampStr)
 
-        const updateExpression: string[] = []
-        const expressionAttributeNames: any = {}
-        const expressionAttributeValues: any = {}
+            const updateExpression: string[] = []
+            const expressionAttributeNames: any = {}
+            const expressionAttributeValues: any = {}
 
-        Object.entries(updates).forEach(([key, value]) => {
-            if (key !== 'userId' && key !== 'timestamp') {
-                updateExpression.push(`#${key} = :${key}`)
-                expressionAttributeNames[`#${key}`] = key
-                expressionAttributeValues[`:${key}`] = value
-            }
-        })
+            Object.entries(updates).forEach(([key, value]) => {
+                if (key !== 'userId' && key !== 'timestamp') {
+                    updateExpression.push(`#${key} = :${key}`)
+                    expressionAttributeNames[`#${key}`] = key
+                    expressionAttributeValues[`:${key}`] = value
+                }
+            })
 
-        updateExpression.push('#updatedAt = :updatedAt')
-        expressionAttributeNames['#updatedAt'] = 'updatedAt'
-        expressionAttributeValues[':updatedAt'] = new Date().toISOString()
+            updateExpression.push('#updatedAt = :updatedAt')
+            expressionAttributeNames['#updatedAt'] = 'updatedAt'
+            expressionAttributeValues[':updatedAt'] = new Date().toISOString()
 
-        await dynamoService.getDynamoClient().send(new UpdateCommand({
-            TableName: this.tableName,
-            Key: { userId, timestamp },
-            UpdateExpression: `SET ${updateExpression.join(', ')}`,
-            ExpressionAttributeNames: expressionAttributeNames,
-            ExpressionAttributeValues: expressionAttributeValues
-        }))
+            await dynamoService.getDynamoClient().send(new UpdateCommand({
+                TableName: this.tableName,
+                Key: { userId, timestamp },
+                UpdateExpression: `SET ${updateExpression.join(', ')}`,
+                ExpressionAttributeNames: expressionAttributeNames,
+                ExpressionAttributeValues: expressionAttributeValues
+            }))
+
+        } catch (error) {
+            console.error('ChatRepository update error:', error)
+            throw error
+        }
     }
 
     async delete(id: string): Promise<void> {
