@@ -43,7 +43,7 @@ export class ChatController {
                 console.log(`✅ Chat response completed: ${totalResponseLength} characters`)
 
             } catch (streamError) {
-                console.error('❌ Streaming error:', streamError)
+                console.error('Streaming error:', streamError)
                 
                 if (!hasContent) {
                     res.write('Xin lỗi, đặt xảy ra lỗi khi xử lý câu hỏi của bạn. Vui lòng thử lại sau.')
@@ -65,41 +65,32 @@ export class ChatController {
     }
 
     async saveChat(req: Request, res: Response) {
-        try {
-            console.log('📥 Save chat request received')
-            console.log('🎫 Auth user object:', (req as any).user)
-            console.log('📦 Request body:', req.body)
-            
+        try {            
             const { messages, sessionId } = req.body
             const userId = (req as any).user?.id
 
-            console.log('🔑 Extracted userId:', userId)
-
             if (!userId) {
-                console.log('❌ Save chat failed: User not authenticated')
+                console.log('Save chat failed: User not authenticated')
                 return ResponseBuilder.unauthorized('User not authenticated')
                     .send(res)
             }
 
             if (!messages || !Array.isArray(messages)) {
-                console.log('❌ Save chat failed: Invalid messages array')
+                console.log('Save chat failed: Invalid messages array')
                 return ResponseBuilder.validation('Messages array is required')
                     .send(res)
             }
 
-            console.log(`💾 Saving chat session for user ${userId} with ${messages.length} messages and sessionId: ${sessionId}`)
-            
             // Save chat session
             await this.chatService.saveChatSession(userId, messages, sessionId)
 
-            console.log(`✅ Chat saved successfully for user ${userId}`)
             ResponseBuilder.success(
                 { sessionId: sessionId || 'new' }, 
                 'Chat saved successfully'
             ).send(res)
 
         } catch (error) {
-            console.error('❌ Error saving chat:', error)
+            console.error('Error saving chat:', error)
             
             if ((error as any).name === 'NotFoundError') {
                 ResponseBuilder.notFound('Chat session', (error as any).id)

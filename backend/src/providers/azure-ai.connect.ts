@@ -59,8 +59,6 @@ export class AzureOpenAIService {
                 },
                 timeout: 30000
             })
-
-            console.log('✅ Azure embedding response received')
             
             if (response.data?.data?.[0]?.embedding) {
                 return response.data.data[0].embedding

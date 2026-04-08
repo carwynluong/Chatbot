@@ -109,7 +109,6 @@ export class ProcessEmbeddingCommand implements ICommand {
 
     async execute(): Promise<void> {
         try {
-            console.log(`🚀 Starting ProcessEmbeddingCommand for: ${this.documentId}`)
             await eventManager.notify('embedding.processing.started', { 
                 documentId: this.documentId 
             })
@@ -124,17 +123,13 @@ export class ProcessEmbeddingCommand implements ICommand {
             
             const chunks = await textSplitter.splitText(this.fileContent)
             const totalChunks = chunks.length
-            console.log(`✂️ Text split into ${totalChunks} chunks`)
 
             // Process chunks in batches
-            console.log(`🧪 Processing embeddings for ${totalChunks} chunks...`)
             const vectors = []
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i]
-                console.log(`🔄 Processing chunk ${i + 1}/${totalChunks} (${chunk.length} chars)`)
                 
                 const embedding = await this.aiStrategy.generateEmbedding(chunk)
-                console.log(`✅ Generated embedding for chunk ${i + 1}, dimension: ${embedding.length}`)
                 
                 vectors.push({
                     id: `${this.documentId}_chunk_${i}`,
@@ -172,10 +167,7 @@ export class ProcessEmbeddingCommand implements ICommand {
             console.log(`✨ ProcessEmbeddingCommand completed successfully for: ${this.documentId}`)
 
         } catch (error) {
-            console.error(`❌ ProcessEmbeddingCommand failed for ${this.documentId}:`)
-            console.error('   Error type:', error instanceof Error ? error.constructor.name : typeof error)
-            console.error('   Error message:', error instanceof Error ? error.message : error)
-            console.error('   Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+            console.error(`ProcessEmbeddingCommand failed for ${this.documentId}:`)
             
             await eventManager.notify('embedding.processing.failed', { 
                 documentId: this.documentId,

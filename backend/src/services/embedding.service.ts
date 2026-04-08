@@ -28,7 +28,7 @@ export class EmbeddingService {
         this.documentRepository = new DocumentRepository()
         
         this.initializePinecone().catch(error => {
-            console.error('❌ Failed to initialize Pinecone:', error)
+            console.error('Failed to initialize Pinecone:', error)
         })
     }
 
@@ -36,12 +36,12 @@ export class EmbeddingService {
         try {
             const isHealthy = await this.vectorStorage.healthCheck()
             if (isHealthy) {
-                console.log('✅ Pinecone connection established')
+                console.log('Pinecone connection established')
             } else {
-                console.warn('⚠️  Pinecone connection issues')
+                console.warn('Pinecone connection issues')
             }
         } catch (error) {
-            console.error('❌ Pinecone initialization failed:', error)
+            console.error('Pinecone initialization failed:', error)
         }
     }
 
@@ -50,27 +50,13 @@ export class EmbeddingService {
     }
 
     async processMultipleFilesDirect(fileUrls: Array<{key: string, url: string, originalName?: string}>): Promise<void> {
-        console.log(`� [SERVICE] processMultipleFilesDirect called with ${fileUrls.length} files`)
-        console.log(`🚀 [SERVICE] File URLs:`, fileUrls)
-        
-        try {
-            console.log(`🔄 Processing ${fileUrls.length} files for embedding...`)
-            
+        try {            
             const promises = fileUrls.map(fileUrl => {
-                console.log(`📋 [SERVICE] Creating promise for: ${fileUrl.key}`)
                 return this.processSingleFile(fileUrl)
             })
             
-            console.log(`⏳ [SERVICE] Waiting for ${promises.length} promises to settle...`)
             const results = await Promise.allSettled(promises)
-            
-            console.log(`✅ [SERVICE] Completed processing ${fileUrls.length} files`)
-            console.log(`📊 [SERVICE] Results:`, results.map((r, i) => ({ 
-                file: fileUrls[i].key, 
-                status: r.status,
-                error: r.status === 'rejected' ? r.reason : undefined 
-            })))
-
+        
             // Check for failures and throw error if any file failed
             const failures = results.filter(r => r.status === 'rejected')
             if (failures.length > 0) {
@@ -81,52 +67,35 @@ export class EmbeddingService {
                         error: f.reason
                     }
                 })
-                
-                console.error(`❌ [SERVICE] ${failures.length}/${fileUrls.length} files failed:`, failedFiles)
-                
+                                
                 const errorMessage = `Failed to process ${failures.length} out of ${fileUrls.length} files`
                 throw new Error(errorMessage)
             }
             
-            console.log(`✅ [SERVICE] All ${fileUrls.length} files processed successfully`)
         } catch (error) {
-            console.error('❌ [SERVICE] processMultipleFilesDirect error:', error)
+            console.error('[SERVICE] processMultipleFilesDirect error:', error)
             throw error
         }
     }
 
-    private async processSingleFile(fileUrl: {key: string, url: string, originalName?: string}): Promise<void> {
-        console.log(`🔍 [DEBUG] Starting processSingleFile for: ${fileUrl.key}`)
-        
+    private async processSingleFile(fileUrl: {key: string, url: string, originalName?: string}): Promise<void> {        
         try {
             if (this.processingQueue.has(fileUrl.key)) {
-                console.log(`⏭️  Skipping ${fileUrl.key} - already processing`)
                 return
             }
 
             this.processingQueue.add(fileUrl.key)
-            console.log(`📋 Added to processing queue: ${fileUrl.key}`)
 
             await eventManager.notify('embedding.processing.started', { 
                 documentId: fileUrl.key 
             })
-            console.log(`📢 Event notification sent: embedding.processing.started`)
-
-            console.log(`📄 Processing: ${fileUrl.originalName || fileUrl.key}`)
-
             // Download file content from S3 first - Don't create DB record yet
-            console.log(`📥 Downloading file from S3: ${fileUrl.key}`)
             const getObjectCommand = new GetObjectCommand({
                 Bucket: S3_BUCKET_NAME,
                 Key: fileUrl.key
             })
             
             const s3Response = await s3Service.getS3Client().send(getObjectCommand)
-            console.log(`📥 S3 response metadata:`, {
-                contentType: s3Response.ContentType,
-                contentLength: s3Response.ContentLength,
-                lastModified: s3Response.LastModified
-            })
             
             if (!s3Response.Body) {
                 throw new Error('No file content received from S3')
@@ -142,21 +111,15 @@ export class EmbeddingService {
 
             // Process document based on type 
             const fileExtension = path.extname(fileUrl.originalName || fileUrl.key).toLowerCase().substring(1)
-            console.log(`🔧 File extension detected: ${fileExtension}`)
-            console.log(`🏭 Creating document processor for: ${fileExtension}`)
             
             const processor = this.documentProcessor.createProcessor(fileExtension)
-            console.log(`📄 Extracting text from buffer...`)
             const textContent = await processor.extractText(fileBuffer)
-            console.log(`📝 Text extracted - length: ${textContent?.length || 0} characters`)
-            console.log(`📝 Text preview: ${textContent?.substring(0, 100) || 'No content'}...`)
 
             if (!textContent || textContent.trim().length === 0) {
                 throw new Error('No text content extracted from file')
             }
 
             // Create and execute processing command - this is where embedding happens
-            console.log(`🚛 Creating ProcessEmbeddingCommand...`)
             const processingCommand = new ProcessEmbeddingCommand(
                 fileUrl.key,
                 textContent,
@@ -165,19 +128,16 @@ export class EmbeddingService {
                 this.vectorStorage
             )
 
-            console.log(`⚡ Executing ProcessEmbeddingCommand...`)
             await commandManager.execute(processingCommand)
-            console.log(`✅ ProcessEmbeddingCommand completed successfully`)
+            console.log(`ProcessEmbeddingCommand completed successfully`)
 
             // ONLY NOW create document in database after successful embedding
-            console.log(`💾 Embedding successful - creating database record...`)
             const { RecursiveCharacterTextSplitter } = await import('langchain/text_splitter')
             const textSplitter = new RecursiveCharacterTextSplitter({
                 chunkSize: 1000,
                 chunkOverlap: 200
             })
             const chunks = await textSplitter.splitText(textContent)
-            console.log(`📊 Text split into ${chunks.length} chunks`)
             
             const documentInput = {
                 fileName: fileUrl.originalName || fileUrl.key,
@@ -188,28 +148,24 @@ export class EmbeddingService {
                 status: 'embedded' as const,
                 totalChunks: chunks.length
             }
-            console.log(`📝 Creating document record with embedded status:`, documentInput)
 
             const document = await this.documentRepository.create(documentInput)
-            console.log(`✅ Document created in database with ID: ${document.id}`)
 
             await eventManager.notify('embedding.processing.completed', { 
                 documentId: fileUrl.key,
                 totalChunks: chunks.length
             })
 
-            console.log(`✅ Successfully processed: ${fileUrl.originalName || fileUrl.key}`)
+            console.log(`Successfully processed: ${fileUrl.originalName || fileUrl.key}`)
 
         } catch (error) {
-            console.error(`❌ Error processing ${fileUrl.key}:`, {
+            console.error(`Error processing ${fileUrl.key}:`, {
                 error: error,
                 message: error instanceof Error ? error.message : 'Unknown error',
                 stack: error instanceof Error ? error.stack : undefined
             })
             
             // DO NOT create database record on failure - just log and notify
-            console.log(`❌ Embedding failed - NOT creating database record for: ${fileUrl.key}`)
-
             await eventManager.notify('embedding.processing.failed', { 
                 documentId: fileUrl.key,
                 error: error instanceof Error ? error.message : 'Unknown error'
@@ -219,7 +175,7 @@ export class EmbeddingService {
             throw error
         } finally {
             this.processingQueue.delete(fileUrl.key)
-            console.log(`🏁 Removed from processing queue: ${fileUrl.key}`)
+            console.log(`🏁Removed from processing queue: ${fileUrl.key}`)
         }
     }
 
@@ -255,9 +211,9 @@ export class EmbeddingService {
             // Delete from document repository
             await this.documentRepository.delete(documentId)
 
-            console.log(`🗑️ Deleted document: ${documentId}`)
+            console.log(`Deleted document: ${documentId}`)
         } catch (error) {
-            console.error(`❌ Error deleting document ${documentId}:`, error)
+            console.error(`Error deleting document ${documentId}:`, error)
             throw error
         }
     }

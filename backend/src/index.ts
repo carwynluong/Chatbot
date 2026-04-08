@@ -38,7 +38,7 @@ setupSwagger(app)
 
 // Initialize Observer Pattern
 initializeObservers()
-console.log('🎯 Design Patterns initialized: Observer, Factory, Strategy, Repository, Command, Builder')
+console.log('Design Patterns initialized: Observer, Factory, Strategy, Repository, Command, Builder')
 
 const checkConnections = async () => {
     try {
@@ -48,15 +48,15 @@ const checkConnections = async () => {
         try {
             const command = new ListTablesCommand({})
             const result = await dynamoService.getRawClient().send(command)
-            console.log(`✅ DynamoDB: Connected (${result.TableNames?.length || 0} tables)`)
+            console.log(`DynamoDB: Connected (${result.TableNames?.length || 0} tables)`)
         } catch (error) {
-            console.warn('⚠️ DynamoDB connection issue:', (error as Error).message)
+            console.warn('⚠️DynamoDB connection issue:', (error as Error).message)
         }
         
         // Test Pinecone connection  
         const pineconeHealthy = await pineconeService.healthCheck()
         if (pineconeHealthy) {
-            console.log('✅ Pinecone: Connected')
+            console.log('Pinecone: Connected')
         } else {
             console.warn('⚠️ Pinecone: Connection failed')
         }
@@ -64,7 +64,7 @@ const checkConnections = async () => {
         // Test Azure AI connection  
         const isAzureReady = await azureService.healthCheck()
         if (isAzureReady) {
-            console.log('✅ Azure AI: Connected')
+            console.log('Azure AI: Connected')
         } else {
             console.warn('⚠️ Azure AI: Connection issues')
         }
@@ -73,7 +73,7 @@ const checkConnections = async () => {
         try {
             const s3Command = new HeadBucketCommand({ Bucket: S3_BUCKET_NAME })
             await s3Service.getS3Client().send(s3Command)
-            console.log(`✅ S3: Bucket ${S3_BUCKET_NAME} accessible`)
+            console.log(`S3: Bucket ${S3_BUCKET_NAME} accessible`)
         } catch (error: any) {
             console.warn(`⚠️ S3: Bucket ${S3_BUCKET_NAME} not accessible`)
             
@@ -83,30 +83,21 @@ const checkConnections = async () => {
                         Bucket: S3_BUCKET_NAME,
                     })
                     await s3Service.getS3Client().send(createCommand)
-                    console.log(`✅ S3: Created bucket ${S3_BUCKET_NAME}`)
+                    console.log(`S3: Created bucket ${S3_BUCKET_NAME}`)
                 } catch (createError: any) {
-                    console.error(`❌ S3: Failed to create bucket - ${createError.message}`)
+                    console.error(`S3: Failed to create bucket - ${createError.message}`)
                 }
             } else if (error.name === 'Forbidden') {
-                console.error('❌ S3: Access denied - Check credentials and permissions')
+                console.error('S3: Access denied - Check credentials and permissions')
             } else {
-                console.error(`❌ S3: Connection error - ${error.name}: ${error.message}`)
+                console.error(`S3: Connection error - ${error.name}: ${error.message}`)
             }
         }
         
-        console.log('🚀 Backend: Server ready with Design Patterns')
-        console.log('📊 Active Patterns:')
-        console.log('  • Singleton: Database connections, Services')
-        console.log('  • Repository: Data access layer')
-        console.log('  • Strategy: AI models, File processing, Storage')
-        console.log('  • Factory: Document processors, Error creators')
-        console.log('  • Observer: Event notifications')
-        console.log('  • Command: Operations with undo support')
-        console.log('  • Builder: Response and query builders')
-        console.log('  • Decorator: Middleware (planned)')
+        console.log('Backend: Server ready with Design Patterns')
         
     } catch (error) {
-        console.error('❌ Connection error:', error)
+        console.error('Connection error:', error)
         console.warn('⚠️ Running in development mode with limited functionality')
         // Don't exit in development - let the app run
     }
@@ -158,10 +149,7 @@ const startServer = async () => {
     await checkConnections()
     
     app.listen(PORT, () => {
-        console.log(`🎉 Server running on port ${PORT}`)
-        console.log(`📘 API Documentation: http://localhost:${PORT}/api-docs`)
-        console.log(`🏥 Health Check: http://localhost:${PORT}/health`)
-        console.log('🎨 Architecture: Clean Code with Design Patterns')
+        console.log(`Server running on port ${PORT}`)
     })
 }
 

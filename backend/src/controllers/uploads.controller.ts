@@ -64,40 +64,40 @@ export class UploadsController {
         }
     }
 
-    async uploadSingleFile(req: Request, res: Response) {
-        try {
-            const file = req.file as Express.Multer.File
+    // async uploadSingleFile(req: Request, res: Response) {
+    //     try {
+    //         const file = req.file as Express.Multer.File
 
-            if (!file) {
-                return ResponseBuilder.validation('No file provided')
-                    .send(res)
-            }
+    //         if (!file) {
+    //             return ResponseBuilder.validation('No file provided')
+    //                 .send(res)
+    //         }
 
-            console.log(`📤 Uploading file: ${file.originalname}`)
+    //         console.log(`📤 Uploading file: ${file.originalname}`)
 
-            // Generate unique key and upload to S3 only
-            const key = this.uploadsService.generateFileKey(file.originalname)
-            const url = await this.uploadsService.uploadFile(key, file.buffer, file.mimetype)
+    //         // Generate unique key and upload to S3 only
+    //         const key = this.uploadsService.generateFileKey(file.originalname)
+    //         const url = await this.uploadsService.uploadFile(key, file.buffer, file.mimetype)
 
-            console.log('📁 File uploaded successfully, manual embedding required')
+    //         console.log('📁 File uploaded successfully, manual embedding required')
 
-            ResponseBuilder.success({
-                key,
-                url,
-                originalName: file.originalname,
-                embeddingStatus: 'not_processed'
-            }, 'File uploaded successfully - use embedding endpoint to process')
-                .setStatus(statusCodes.CREATED)
-                .send(res)
+    //         ResponseBuilder.success({
+    //             key,
+    //             url,
+    //             originalName: file.originalname,
+    //             embeddingStatus: 'not_processed'
+    //         }, 'File uploaded successfully - use embedding endpoint to process')
+    //             .setStatus(statusCodes.CREATED)
+    //             .send(res)
 
-        } catch (error) {
-            console.error('❌ Error uploading file:', error)
+    //     } catch (error) {
+    //         console.error('❌ Error uploading file:', error)
             
-            ResponseBuilder.error('Failed to upload file')
-                .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
-                .send(res)
-        }
-    }
+    //         ResponseBuilder.error('Failed to upload file')
+    //             .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+    //             .send(res)
+    //     }
+    // }
 
     async getFileUrl(req: Request, res: Response) {
         try {
@@ -211,59 +211,59 @@ export class UploadsController {
         }
     }
 
-    async downloadFile(req: Request, res: Response) {
-        try {
-            // Handle both legacy :key and encoded :encodedKey patterns
-            let key = req.params.key || req.params.encodedKey
+    // async downloadFile(req: Request, res: Response) {
+    //     try {
+    //         // Handle both legacy :key and encoded :encodedKey patterns
+    //         let key = req.params.key || req.params.encodedKey
 
-            // If it's an encoded key, decode it from base64
-            if (req.params.encodedKey) {
-                try {
-                    key = Buffer.from(req.params.encodedKey, 'base64').toString('utf-8')
-                } catch (decodeError) {
-                    console.error('❌ Error decoding key:', decodeError)
-                    return ResponseBuilder.validation('Invalid encoded file key')
-                        .send(res)
-                }
-            }
+    //         // If it's an encoded key, decode it from base64
+    //         if (req.params.encodedKey) {
+    //             try {
+    //                 key = Buffer.from(req.params.encodedKey, 'base64').toString('utf-8')
+    //             } catch (decodeError) {
+    //                 console.error('❌ Error decoding key:', decodeError)
+    //                 return ResponseBuilder.validation('Invalid encoded file key')
+    //                     .send(res)
+    //             }
+    //         }
 
-            if (!key) {
-                return ResponseBuilder.validation('File key is required')
-                    .send(res)
-            }
+    //         if (!key) {
+    //             return ResponseBuilder.validation('File key is required')
+    //                 .send(res)
+    //         }
 
-            // Check if file exists
-            const exists = await this.uploadsService.fileExists(key)
+    //         // Check if file exists
+    //         const exists = await this.uploadsService.fileExists(key)
             
-            if (!exists) {
-                return ResponseBuilder.notFound('File', key)
-                    .send(res)
-            }
+    //         if (!exists) {
+    //             return ResponseBuilder.notFound('File', key)
+    //                 .send(res)
+    //         }
 
-            // Download file
-            const buffer = await this.uploadsService.downloadFile(key)
+    //         // Download file
+    //         const buffer = await this.uploadsService.downloadFile(key)
 
-            // Extract filename from key
-            const filename = key.split('/').pop() || 'download'
+    //         // Extract filename from key
+    //         const filename = key.split('/').pop() || 'download'
 
-            // Set appropriate headers
-            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-            res.setHeader('Content-Type', 'application/octet-stream')
-            res.setHeader('Content-Length', buffer.length.toString())
+    //         // Set appropriate headers
+    //         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    //         res.setHeader('Content-Type', 'application/octet-stream')
+    //         res.setHeader('Content-Length', buffer.length.toString())
 
-            // Send file buffer
-            res.send(buffer)
+    //         // Send file buffer
+    //         res.send(buffer)
 
-        } catch (error) {
-            console.error('❌ Error downloading file:', error)
+    //     } catch (error) {
+    //         console.error('❌ Error downloading file:', error)
             
-            if (!res.headersSent) {
-                ResponseBuilder.error('Failed to download file')
-                    .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
-                    .send(res)
-            }
-        }
-    }
+    //         if (!res.headersSent) {
+    //             ResponseBuilder.error('Failed to download file')
+    //                 .setStatus(statusCodes.INTERNAL_SERVER_ERROR)
+    //                 .send(res)
+    //         }
+    //     }
+    // }
 
     async listFiles(req: Request, res: Response) {
         try {

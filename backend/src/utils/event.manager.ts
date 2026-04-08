@@ -15,7 +15,6 @@ export class EventManager implements IEventSubject {
         const eventObservers = this.observers.get(event)
         if (eventObservers) {
             eventObservers.delete(observer)
-            console.log(`📝 Observer unsubscribed from event: ${event}`)
         }
     }
 
@@ -24,12 +23,10 @@ export class EventManager implements IEventSubject {
         if (!eventObservers || eventObservers.size === 0) {
             return
         }
-
-        console.log(`📢 Notifying ${eventObservers.size} observers for event: ${event}`)
         
         const promises = Array.from(eventObservers).map(observer => 
             observer.update(event, data).catch(error => 
-                console.error(`❌ Observer failed to handle event ${event}:`, error)
+                console.error(`Observer failed to handle event ${event}:`, error)
             )
         )
         

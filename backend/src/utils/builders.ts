@@ -28,26 +28,26 @@ export class ResponseBuilder {
         return this
     }
 
-    setError(error: string | Error): ResponseBuilder {
-        this.response.success = false
-        this.response.error = error instanceof Error ? error.message : error
-        return this
-    }
+    // setError(error: string | Error): ResponseBuilder {
+    //     this.response.success = false
+    //     this.response.error = error instanceof Error ? error.message : error
+    //     return this
+    // }
 
     setTimestamp(timestamp: Date = new Date()): ResponseBuilder {
         this.response.timestamp = timestamp.toISOString()
         return this
     }
 
-    setPagination(page: number, limit: number, total: number): ResponseBuilder {
-        this.response.pagination = {
-            page,
-            limit,
-            total,
-            pages: Math.ceil(total / limit)
-        }
-        return this
-    }
+    // setPagination(page: number, limit: number, total: number): ResponseBuilder {
+    //     this.response.pagination = {
+    //         page,
+    //         limit,
+    //         total,
+    //         pages: Math.ceil(total / limit)
+    //     }
+    //     return this
+    // }
 
     setMeta(meta: any): ResponseBuilder {
         this.response.meta = meta
